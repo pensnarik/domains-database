@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/pensnarik/domains-database.svg?branch=master)](https://travis-ci.org/pensnarik/domains-database)
+
 # Datatrace Crawler
 
 Datatrace is a project aimed to collect and keep up to date the list of all active Internet domains.
