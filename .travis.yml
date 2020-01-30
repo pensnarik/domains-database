@@ -4,6 +4,7 @@ python:
 # command to install dependencies
 install:
   - pip3 install pytest
+  - which pip3
 bedore_script:
   - python3 setup.py sdist
   - find dist -name "*.tar.gz" -exec sudo -E pip3 install -U {} \;
