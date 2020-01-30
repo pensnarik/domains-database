@@ -1,0 +1,50 @@
+CREATE OR REPLACE
+FUNCTION report.status_log
+(
+  adate_from timestamptz,
+  adate_till timestamptz,
+  ahostname character varying DEFAULT NULL::character varying,
+  ainterval character DEFAULT 'm'::bpchar
+) RETURNS TABLE
+(
+  date_time timestamptz,
+  date_time_ux bigint,
+  num_ok bigint,
+  num_timeout bigint,
+  num_connection_error bigint,
+  num_too_many_redirects bigint,
+  num_unknown_error bigint,
+  num_too_large bigint,
+  num_resolve_error bigint
+)
+AS $$
+declare
+  vtable text; vsql text;
+begin
+    adate_from := date_trunc(ainterval, adate_from);
+    adate_till := date_trunc(ainterval, adate_till);
+
+    vsql := $sql$
+    select t.d,
+           extract('epoch' from t.d)::bigint * 1000,
+           coalesce(sum(case when fetch_result = 'ok'                 then st.sites_processed else 0 end), 0) as num_ok,
+           coalesce(sum(case when fetch_result = 'timeout'            then st.sites_processed else 0 end), 0) as num_timeout,
+           coalesce(sum(case when fetch_result = 'connection_error'   then st.sites_processed else 0 end), 0) as num_connection_error,
+           coalesce(sum(case when fetch_result = 'too_many_redirects' then st.sites_processed else 0 end), 0) as num_too_many_redirects,
+           coalesce(sum(case when fetch_result = 'unknown_error'      then st.sites_processed else 0 end), 0) as num_unknown_error,
+           coalesce(sum(case when fetch_result = 'too_large'          then st.sites_processed else 0 end), 0) as num_too_large,
+           coalesce(sum(case when fetch_result = 'resolve_error'      then st.sites_processed else 0 end), 0) as num_resolve_error
+      from (select generate_series($2, $3, interval '1 {interval}') d) t
+      left join public.stat_{interval} st
+        on t.d = st.finished_at
+       and (st.hostname = $1 or $1 is null)
+     where t.d >= $2 and t.d <= $3
+     group by 1, 2
+     order by 1 desc;
+     $sql$;
+
+     vsql := replace(vsql, '{interval}', ainterval);
+
+     return query execute vsql using ahostname, adate_from, adate_till;
+end;
+$$ LANGUAGE plpgsql;

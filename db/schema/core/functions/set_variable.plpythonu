@@ -1,0 +1,8 @@
+create or replace
+function core.set_variable(
+  aname  text,
+  avalue text
+) returns void as $$
+    GD[aname] = avalue
+$$ language plpythonu;
+

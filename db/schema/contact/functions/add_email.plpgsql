@@ -1,0 +1,16 @@
+create or replace
+function contact.add_email(
+  asite_id integer,
+  aemail   text
+) returns integer as $$
+begin
+  if not exists (select * from contact.email where site_id = asite_id and email = aemail) then
+    insert into contact.email (site_id, email) values (asite_id, aemail);
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$ language plpgsql security definer;
+
+comment on function contact.add_email(integer, text) is 'Добавляет email, возвращает количество (0 или 1)';

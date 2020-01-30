@@ -1,0 +1,5 @@
+create or replace
+function tags_as_test(atags integer[]) returns text as $$
+begin
+end;
+$$ language plpgsql;

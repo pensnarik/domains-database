@@ -1,0 +1,628 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# http://statonline.ru/domainlist?tld=ru
+
+"""
+Datatrace parser
+
+Requires a connection to datatrace database
+
+Copyright Andrey Zhidenkov, 2015-2020, https://github.com/pensnarik/domains-database
+"""
+
+import re
+import os
+import sys
+import time
+import socket
+import signal
+import logging
+import argparse
+import traceback
+import configparser
+from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
+from hashlib import md5
+
+import psycopg2
+import psycopg2.extras
+from timeout_decorator import TimeoutError
+
+from datatrace import __version__, __version_info__, get_config_filename
+from datatrace.sql import Sql
+from datatrace.spyder import parser, web, popular_hosts
+from datatrace.spyder.job import JobCheckSQLInjection
+
+logger = logging.getLogger('datatrace')
+# FIXME: This is hideous, but necessary to INFO logging level work in StreamHandler
+logger.setLevel(logging.DEBUG)
+
+class OperationTimes():
+    """
+    Adapter class to use operation_times_rec in psycopg2
+    """
+    def __init__(self, get_item, resolve, fetch_page, parse, search_phones, search_emails):
+        self.get_item = get_item
+        self.resolve = resolve
+        self.fetch_page = fetch_page
+        self.parse = parse
+        self.search_phones = search_phones
+        self.search_emails = search_emails
+
+    def clear(self):
+        """
+        Class attributes initialization
+        """
+        self.get_item = timedelta(0, 0, 0)
+        self.resolve = timedelta(0, 0, 0)
+        self.fetch_page = timedelta(0, 0, 0)
+        self.parse = timedelta(0, 0, 0)
+        self.search_phones = timedelta(0, 0, 0)
+        self.search_emails = timedelta(0, 0, 0)
+
+class App():
+    """
+    App class
+    """
+
+    # Database connection
+    conn = None
+    # For file logging, refer to the comment in self.get_log_filename()
+    file_log_handler = None
+    # Minumal regular expression search time to be logged
+    log_min_expression_duration = 1.0
+
+    def __init__(self):
+        arg_parser = argparse.ArgumentParser(description='Parsing domains')
+        arg_parser.add_argument('--domain', type=str, help='Domain')
+        arg_parser.add_argument('--debug', action='store_true')
+        arg_parser.add_argument('--instance', type=str, help='Systemd instance ID')
+        arg_parser.add_argument('--init', action='store_true',
+                                help='Initialize database with popular domains and exit')
+        arg_parser.add_argument('--task-id', type=int, help='Task ID to process', default=None)
+        arg_parser.add_argument('--job', type=str, help='Job class name to execute', default=None)
+        arg_parser.add_argument('--log-expressions', action='store_true', default=False)
+        arg_parser.add_argument('--version', action='store_true')
+        arg_parser.add_argument('--db', type=str, required=False)
+        arg_parser.add_argument('--max-phones', type=int, default=10)
+        arg_parser.add_argument('--max-emails', type=int, default=10)
+
+        self.args = arg_parser.parse_args()
+
+        if self.args.version is True:
+            print(__version_info__)
+            sys.exit(0)
+
+        self.setup_logging()
+
+        logger.info(__version_info__)
+
+        signal.signal(signal.SIGINT, self.terminate)
+        signal.signal(signal.SIGTERM, self.terminate)
+
+        self.config = configparser.ConfigParser()
+        self.config.read(get_config_filename())
+
+        if self.args.job is not None and self.args.domain is None:
+            raise Exception('Please, use --domain option with --job to specify a domain to proceed')
+
+        self.debug = self.args.debug
+        self.dry_run = self.debug
+
+        while True:
+            try:
+                self.conn = psycopg2.connect(self.args.db or os.environ.get('DATATRACE_DB'))
+                break
+            except psycopg2.OperationalError:
+                logger.warning('Database is not available yet, will try to reconnect in 5s')
+                time.sleep(5)
+                continue
+
+        self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        self.s = Sql(self.conn)
+
+        if self.dry_run:
+            return
+
+        self.hostname = socket.gethostname()
+        self.session_id = self.init_session()
+
+    def setup_logging(self):
+        """
+        Logging set up
+        """
+        self.stdin_log_handler = logging.StreamHandler()
+        self.stdin_log_handler.setLevel(logging.INFO)
+        stdin_log_formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(message)s')
+        self.stdin_log_handler.setFormatter(stdin_log_formatter)
+
+        logger.addHandler(self.stdin_log_handler)
+
+        try:
+            self.file_log_handler = RotatingFileHandler(self.get_log_filename(),
+                                                        encoding='utf-8',
+                                                        maxBytes=10*1024*1024,
+                                                        backupCount=2)
+            self.file_log_handler.setLevel(logging.DEBUG)
+            file_log_formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(message)s')
+            self.file_log_handler.setFormatter(file_log_formatter)
+
+            logger.addHandler(self.file_log_handler)
+        except PermissionError:
+            logger.warning('Could not access log directory (permission error), all output ' \
+                           'will be redirected to stdout')
+
+    def init_session(self):
+        """
+        Database session initialization
+        """
+        query = "select init_session(%(info)s, %(version)s, %(hostname)s, " \
+                "%(instance)s, %(pid)s)"
+
+        session_id = self.s.get_value(query, {'info': 'Crawler', 'version': __version__,
+                                              'hostname': self.hostname,
+                                              'instance': self.args.instance, 'pid': os.getpid()})
+
+        logger.info('Initialized session with id = %s', session_id)
+        return session_id
+
+    def lock(self):
+        """
+        Returns next task from the database
+        """
+        query = "select id, site_id, task_id, domain, job " \
+                "  from public.get_next_item(%(session_id)s, %(task_id)s)"
+
+        return self.s.get_row(query, {'session_id': self.session_id, 'task_id': self.args.task_id})
+
+    def update_activity(self, sites_processed=0):
+        query = "select public.update_activity(%s, %s)"
+        self.s.execute(query, self.session_id, sites_processed)
+        logger.info('Activity updated')
+
+    def run(self):
+        """
+        Program entry point
+        """
+        self.setup_config()
+
+        self.operation_times = OperationTimes(0, 0, 0, 0, 0, 0)
+        self.s.execute("set application_name to %s", (__version_info__))
+        self.load_expressions()
+        self.load_meta()
+
+        if self.args.domain is not None and self.args.job is None:
+            logger.setLevel(logging.DEBUG)
+            logger.info('Runnig for domain %s', self.args.domain)
+
+            if not self.dry_run:
+                self.s.execute('select public.add_domain(%s)', (self.args.domain,))
+
+            site_id = self.s.get_value('select id from site where domain = %s', (self.args.domain,))
+
+            self.process_site(None, None, site_id, self.args.domain)
+            self.end_session()
+            return
+        elif self.args.job is not None:
+            job_task = globals()[self.args.job](logger, self.s)
+            result = job_task.run({'domain': self.args.domain, 'site_id': None})
+            logger.info('Job result: %s', result)
+            self.end_session()
+            return
+
+        if self.args.init:
+            # In initialization mode the database is populated with popular
+            # domains from popular_hosts array, during the regular execution
+            # these hosts are ignored in order to not overload the database
+            # with redundant locks
+            inserted = self.s.get_value('select public.add_domains(%s)', (popular_hosts,))
+            logger.info('Database was initialized with %s popular domains', inserted)
+            return
+
+        self.sites_processed = 0
+
+        socket.setdefaulttimeout(5)
+
+        while True:
+            self.operation_times.clear()
+            date_start = datetime.now()
+            item = self.lock()
+
+            if item is None:
+                logger.info('No items were fetched, sleeping...')
+                # Updating last activity to prevent the session to be
+                # killed by datatrace-dispatcher
+                self.update_activity()
+                time.sleep(10)
+                continue
+            self.operation_times.get_item = datetime.now() - date_start
+            logger.info('Item %s fetched in %ss', item['id'],
+                        self.deltastr(self.operation_times.get_item))
+
+            try:
+                if item['job'] is None:
+                    result = self.process_site(item['id'], item['task_id'],
+                                               item['site_id'], item['domain'])
+                else:
+                    job_task = globals()['Job%s' % item['job']](logger, self.s)
+                    result = job_task.run(item)
+
+                self.save_task(item['id'], item['domain'], item['site_id'], result['status'],
+                               result['fetch_result'], self.operation_times, result['stat'],
+                               result['error'])
+
+                self.sites_processed += 1
+            except Exception as e:
+                # Race condition?
+                logger.error('Unhandled exception while processing site: %s', str(e))
+                self.save_task(item['id'], item['domain'], item['site_id'], 'error',
+                               'unknown_error', self.operation_times, {'sites_processed': 1},
+                               str(e))
+
+            self.update_activity(sites_processed=1)
+
+            if self.sites_processed % 100 == 0:
+                logger.info('Reloading expressions from config.expression')
+                self.load_expressions()
+                self.load_meta()
+
+        self.conn.close()
+
+    def get_site_partition(self, domain):
+        return md5(domain.encode('utf-8')).hexdigest()[:2]
+
+    def save_site(self, domain, encoding, title, server, powered_by, size, response_code,
+                  system_tags, fetch_result, task_id):
+        """
+        Sace task results in the public.site table
+        """
+        query = "update public.site set encoding = %s, title = %s, server = %s, powered_by = %s, " \
+                "size = %s, response_code = %s, system_tags = %s, last_check_time = now(), " \
+                "last_fetch_result = %s, last_task_id = %s, " \
+                "success_count = success_count + %s, error_count = error_count + %s " \
+                "where domain = %s and left(md5((domain)::text), 2) = %s"
+        return self.s.execute(query, encoding[:20] if encoding is not None else None,
+                              title[:500] if title is not None else None,
+                              server[:300] if server is not None else None,
+                              powered_by[:126] if powered_by is not None else None,
+                              size, response_code, system_tags, fetch_result, task_id,
+                              1 if fetch_result == 'ok' else 0,
+                              0 if fetch_result == 'ok' else 1,
+                              domain,
+                              self.get_site_partition(domain))
+
+    def save_task(self, id, domain, site_id, status, fetch_result, operation_times, stat,
+                  error=None):
+        """
+        Save statistics in public.stat table using save_stat() stored procedure
+        """
+        query = "select public.save_stat(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, " \
+                "%s::smallint, %s::smallint, " \
+                "%s::smallint, %s::smallint, %s::smallint, %s::smallint, %s::smallint)"
+
+        self.s.execute(query, domain, self.session_id, self.hostname, fetch_result,
+                       stat.get('traffic', 0),
+                       operation_times.get_item.total_seconds(),
+                       operation_times.resolve.total_seconds(),
+                       operation_times.fetch_page.total_seconds(),
+                       operation_times.parse.total_seconds(),
+                       operation_times.search_phones.total_seconds(),
+                       operation_times.search_emails.total_seconds(),
+                       stat['sites_processed'], stat.get('sites_extracted', 0),
+                       stat.get('sites_added', 0), stat.get('emails_extracted', 0),
+                       stat.get('emails_added', 0), stat.get('phones_extracted', 0),
+                       stat.get('phones_added', 0))
+
+        self.s.execute('select public.delete_task_from_queue(%s, %s)', id, self.session_id)
+
+    def save_meta(self, task_id, site_id, meta_tags):
+        for meta_id in meta_tags.keys():
+            self.s.execute('select public.save_tag_meta_value(%s, %s, %s, %s)',
+                           site_id, task_id, meta_id, meta_tags[meta_id])
+
+    def deltastr(self, delta):
+        """
+        Returns time delta as string
+        """
+        return '%s.%.0f' % (delta.seconds, delta.microseconds / 1000.0)
+
+    def load_expressions(self):
+        query = "select e.id as id, t.name as name, e.code as code, " \
+                "e.is_multiline as is_multiline, e.tag_id as tag_id, " \
+                "e.is_ignorecase as is_ignorecase " \
+                "from config.expression e " \
+                "join config.tag t on t.id = e.tag_id " \
+                "where is_active order by id "
+
+        self.expressions = self.s.get_rows(query)
+        logger.info('Loaded %s expressions', len(self.expressions))
+
+    def load_meta(self):
+        """
+        Loads meta expressions from the database
+        """
+        query = "select m.id, m.tag_id, me.expression " \
+                "from config.tag_meta m " \
+                "join config.tag_meta_expression me on me.meta_id = m.id"
+
+        # self.meta_expressions is a dictionary where the keys are
+        # expression IDs from config.expression and the values are
+        # list of key-value mapping with the following structure:
+        # {'id': <expression ID>, 'expression': <loaded expression>}
+
+        self.meta_expressions = dict()
+
+        for expression in self.s.get_rows(query):
+            new_expression = {'id': expression['id'], 'expression': expression['expression']}
+            if expression['tag_id'] not in self.meta_expressions:
+                self.meta_expressions[expression['tag_id']] = [new_expression]
+            else:
+                self.meta_expressions[expression['tag_id']].append(new_expression)
+
+        logger.info('Loaded meta expressions: %s', self.meta_expressions)
+
+    def log_slow_expression(self, expression_source, expression_id, site_id,
+                            site_task_id, search_time):
+        self.s.execute('insert into log.slow_expression (expression_source, ' \
+                       'expression_id, site_id, site_task_id, search_time) ' \
+                       'values (%s, %s, %s, %s, %s)', expression_source, expression_id,
+                       site_id, site_task_id, search_time)
+
+    def get_system_tags(self, buffer, context, site_id, site_task_id):
+        """
+        Parses buffer and returns an array of matched expression IDs
+        (from config.expression table)
+        """
+        if self.args.log_expressions:
+            logger.debug(self.expressions)
+        if buffer is None:
+            return []
+        for k in context.keys():
+            context[k] = context[k].replace('.', '\.') # pylint: disable=anomalous-backslash-in-string
+        res = list()
+        for expr in self.expressions:
+            if self.args.log_expressions:
+                logger.debug('Checking expression %s', expr['name'])
+                logger.debug('Expression with context variables %s', expr['code'] % context)
+            # `expr['is_multiline'] else re.MULTILINE` is not a typo, we consider re.DOTALL flag
+            flags = re.MULTILINE | re.DOTALL if expr['is_multiline'] else re.MULTILINE
+            if expr['is_ignorecase']:
+                flags = flags | re.IGNORECASE
+
+            date_start = datetime.now()
+            m = re.search(expr['code'] % context, buffer, flags)
+            search_time = datetime.now() - date_start
+            if self.args.log_expressions:
+                logger.debug('Search completed in %ss' % (search_time.total_seconds()))
+            if not self.debug and search_time.total_seconds() >= self.log_min_expression_duration:
+                self.log_slow_expression('config.expression', expr['id'], site_id, site_task_id,
+                                         search_time.total_seconds())
+            if m is not None:
+                if self.args.log_expressions:
+                    logger.debug('Matched!')
+                # FIXME: Change to tag_id!
+                res.append(expr['id'])
+            else:
+                if self.args.log_expressions:
+                    logger.debug('Not matched')
+                pass
+        return res
+
+    def get_tag_ids_by_expression_ids(self, tags):
+        return list(set([i['tag_id'] for i in self.expressions]))
+
+    def get_meta_tags(self, buffer, context, system_tags, site_id, site_task_id):
+        result = dict()
+
+        for system_tag_id in self.get_tag_ids_by_expression_ids(system_tags):
+            if system_tag_id not in self.meta_expressions:
+                continue
+            logger.info('Processing meta tags for system tag %s', system_tag_id)
+
+            for expression in self.meta_expressions[system_tag_id]:
+                if self.args.log_expressions:
+                    logger.debug('Checking expression %s', expression['expression'])
+
+                date_start = datetime.now()
+                m = re.search(expression['expression'], buffer)
+                search_time = datetime.now() - date_start
+
+                if self.args.log_expressions:
+                    logger.debug('Search completed in %ss' % (search_time.total_seconds()))
+
+                if not self.debug and \
+                    search_time.total_seconds() >= self.log_min_expression_duration:
+                    self.log_slow_expression('config.tag_meta_expression',
+                                             expression['id'],
+                                             site_id,
+                                             site_task_id, search_time.total_seconds())
+
+                if m:
+                    result[expression['id']] = m.group(1)
+        return result
+
+    def setup_config(self):
+        self.max_phones = self.args.max_phones or 10
+        self.max_emails = self.args.max_emails or 10
+
+    def process_site(self, task_item_id, task_id, site_id, domain):
+        logger.warning('Processing site %s...', domain)
+
+        date_start = datetime.now()
+
+        try:
+            ip_list = socket.gethostbyname_ex(domain)[2]
+        except socket.gaierror as e:
+            # We need to save operations times even in case of
+            # host resolving failure
+            self.operation_times.resolve = datetime.now() - date_start
+            logger.error(str(e))
+            return {'status': 'error', 'fetch_result': 'resolve_error', 'error': str(e),
+                    'stat': {'sites_processed': 1}, 'traffic': 0}
+
+        self.operation_times.resolve = datetime.now() - date_start
+        logger.debug('Host resolved in %ss', self.deltastr(self.operation_times.resolve))
+
+        logger.info('IPs: %s', ip_list)
+
+        if not self.debug:
+            self.s.execute("update public.site set addr = '{%s}'::inet[] where domain = '%s' " \
+                           "and left(md5((domain)::text), 2) = '%s'" %
+                           (','.join(ip_list), domain, self.get_site_partition(domain),))
+
+        date_start = datetime.now()
+        try:
+            result = web.get_page(domain)
+        except TimeoutError:
+            result = {'status': 'timeout', 'data': None, 'status_code': None, 'headers': None,
+                      'size': None, 'error': 'Timeout'}
+
+        if result['status'] == 'unknown_error':
+            if not self.debug:
+                self.s.execute("insert into log.error(session_id, site_id, message) "
+                               "values (%s, %s, %s)", self.session_id, site_id, result['error'])
+            logger.error('Unhandled exception: %s', result['error'])
+
+        self.operation_times.fetch_page = datetime.now() - date_start
+        logger.debug('Page fetched in %ss', self.deltastr(self.operation_times.fetch_page))
+        logger.debug('Headers: %s', result['headers'])
+
+        date_start = datetime.now()
+        context = {'domain': domain}
+
+        if result['status'] == 'ok':
+            system_tags = self.get_system_tags(result['data'], context, site_id, task_item_id)
+        else:
+            system_tags = []
+
+        self.operation_times.parse = datetime.now() - date_start
+        logger.debug('Page parsed in %ss', self.deltastr(self.operation_times.parse))
+        logger.info('System tags: %s', system_tags)
+
+        # Extracting meta tags values
+        if result['status'] == 'ok':
+            meta_tags = self.get_meta_tags(result['data'], context, system_tags, site_id,
+                                           task_item_id)
+        else:
+            meta_tags = {}
+
+        logger.info('Meta tags: %s', meta_tags)
+
+        # Extracting phone numbers
+        date_start = datetime.now()
+        phones = list()
+
+        # TODO: fetch contact_pages once
+        phones = parser.get_phones(result['data']) if result['status'] == 'ok' else []
+
+        self.operation_times.search_phones = datetime.now() - date_start
+        logger.debug('Phones found in %ss', self.deltastr(self.operation_times.search_phones))
+        logger.info('Phones: %s', phones)
+
+        # Exctacting e-mails
+        date_start = datetime.now()
+        emails = list()
+
+        emails = parser.get_emails(result['data']) if result['status'] == 'ok' else []
+        self.operation_times.search_emails = datetime.now() - date_start
+        logger.debug('Emails found in %ss', self.deltastr(self.operation_times.search_emails))
+        logger.info('Emails: %s', emails)
+
+        # Extracting all domains found on page
+        domains = parser.get_domains(result['data'], domain) if result['status'] == 'ok' else []
+        logger.info('Found %s unique domains on page', len(domains))
+        logger.debug('Domains: %s', domains)
+
+        stat = {'sites_extracted': len(domains), 'sites_processed': 1, 'traffic': 0}
+
+        if result['status'] == 'ok':
+            charset = result['charset']
+            title = parser.get_title(result['data'], charset or 'utf8')
+            server = result['headers'].get('Server')
+            powered_by = result['headers'].get('X-Powered-By')
+        else:
+            charset = None
+            title = None
+            server = None
+            powered_by = None
+
+        logger.info('Charset: %s', charset)
+        logger.info('Title: %s', title)
+        logger.info('Server: %s', server)
+        logger.info('Result status is "%s"', result['status'])
+
+        if self.debug is True:
+            return {}
+
+        if result['status'] == 'ok':
+            contacts = self.s.get_row('select oemails, ophones from contact.add_contacts(%s, %s, %s, %s)',
+                                      (site_id, emails, phones, domain,))
+
+            domains = list(set(domains) - set(popular_hosts))
+
+            if len(domains) > 0:
+                logger.warning('Domains: %s', ', '.join(domains))
+                sites_added = self.s.get_value('select public.add_domains(%s, %s)', (domains, task_item_id,))
+            else:
+                sites_added = 0
+
+            stat.update({'phones_extracted': len(phones), 'emails_extracted': len(emails),
+                         'phones_added': contacts['ophones'], 'emails_added': contacts['oemails'],
+                         'sites_added': sites_added, 'traffic': result['size']})
+
+            self.save_meta(task_id, site_id, meta_tags)
+
+            try:
+                self.save_site(domain, charset, title, server, powered_by, result['size'],
+                               result['status_code'], system_tags, result['status'], task_id)
+            except psycopg2.DataError:
+                self.save_site(domain, charset, 'Title encode error', server, powered_by,
+                               result['size'], result['status_code'], system_tags, result['status'],
+                               task_id)
+
+            return {'status': 'done', 'fetch_result': result['status'], 'error': None, 'stat': stat}
+        else:
+            self.save_site(domain, charset, title, server, powered_by, result.get('size'),
+                           result.get('status_code'), system_tags, result.get('status'), task_id)
+
+            return {'status': 'error', 'fetch_result': result['status'],
+                    'error': 'Fetch result was not OK', 'stat': stat}
+
+    def get_log_filename(self):
+        """
+        Returns log file name
+        """
+        if self.args.instance is None:
+            return os.path.join('/var/log/datatrace', 'datatrace.log')
+        else:
+            return os.path.join('/var/log/datatrace', 'datatrace-%s.log' % self.args.instance)
+
+    def end_session(self, signal_number=None):
+        if not self.debug:
+            self.s.execute('select end_session(%s, %s)', self.session_id, signal_number)
+
+    def terminate(self, signal_number, stack_frame):
+        """
+        SIGINT and SIGTERM signals handler
+
+        We receive SIGINT when user interrupts program execution using Ctrl-C shortcut,
+        we receive SIGTERM when the program is run under systemd daemon as a result
+        of `systemctl stop datatrace@<instance>` command
+        """
+        logger.info('Terminating session %s...', self.session_id)
+        stack_trace = ''.join(traceback.format_stack(stack_frame))
+        logger.info(stack_trace)
+
+        if self.dry_run is False:
+            self.end_session(signal_number)
+            self.conn.close()
+
+        raise SystemExit("Terminating on signal %(signal_number)r" % vars())
+
+def main(argv):
+    app = App()
+    sys.exit(app.run())
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

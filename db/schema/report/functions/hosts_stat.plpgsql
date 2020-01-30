@@ -1,0 +1,46 @@
+create or replace
+function report.hosts_stat
+(
+    adate_from timestamptz,
+    adate_till timestamptz,
+    ainterval char default 'm'
+) returns table
+(
+    date_time timestamptz,
+    date_time_ux bigint,
+    host varchar,
+    parsed_sites integer,
+    avg_total numeric
+) as $$
+declare
+  vtable text; vsql text;
+begin
+    adate_from := date_trunc(ainterval, adate_from);
+    adate_till := date_trunc(ainterval, adate_till);
+
+    vsql := $sql$
+    with hosts as (
+      select distinct hostname
+        from public.stat_{interval} st
+       where st.finished_at >= $1 and st.finished_at <= $2
+    )
+    select d.t,
+           extract('epoch' from d.t)::bigint * 1000,
+           d.hostname,
+           coalesce(sum(st.sites_processed), 0)::integer as parsed_sites,
+           coalesce(round(avg(time_get_item + time_resolve + time_fetch_page + time_parse +
+              time_search_phones + time_search_emails), 2), 0)
+      from (select t, hostname from generate_series($1, $2, interval '1 {interval}') t join hosts on true) d
+      left join public.stat_{interval} st
+        on st.finished_at = d.t
+       and st.hostname = d.hostname
+     where d.t >= $1 and d.t <= $2
+     group by 1, 2, 3
+     order by 1 desc;
+     $sql$;
+
+     vsql := replace(vsql, '{interval}', ainterval);
+
+     return query execute vsql using adate_from, adate_till;
+end;
+$$ language plpgsql;

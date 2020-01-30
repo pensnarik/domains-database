@@ -1,0 +1,13 @@
+create or replace
+function end_session
+(
+    aid integer,
+    asignal integer default null::integer
+) returns void as $$
+begin
+  update session
+     set end_time = current_timestamp,
+         term_signal = asignal
+   where id = aid;
+end;
+$$ language plpgsql security definer;

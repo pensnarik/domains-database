@@ -1,0 +1,41 @@
+create or replace
+function public.add_domain(
+  adomain                text,
+  afrom_site_task_id     integer default null::integer,
+  askip_reference_update boolean default true
+) returns integer as $$
+declare
+  vcount integer := 0;
+  vpartition text := left(md5((adomain)::text), 2);
+  vexists integer;
+begin
+  if not askip_reference_update then
+    execute format($sql$
+    update partitions.site__%1$s
+       set reference_count = coalesce(reference_count, 0) + 1
+     where domain = adomain;
+    $sql$, vpartition);
+  end if;
+
+  if not exists (
+    select *
+      from public.site
+     where domain = adomain
+       and left(md5(domain), 2) = vpartition
+  ) then
+    execute format($sql$
+    insert into partitions.site__%1$s (domain, from_site_task_id)
+    values ($1, $2);
+    $sql$, vpartition) using adomain, afrom_site_task_id;
+
+    return 1;
+  else
+    return 0;
+  end if;
+
+exception when unique_violation then
+  return 0;
+end;
+$$ language plpgsql security definer;
+
+comment on function public.add_domain(text, integer, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';

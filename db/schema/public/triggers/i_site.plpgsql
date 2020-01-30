@@ -1,0 +1,9 @@
+create or replace
+function public.i_site() returns trigger as $$
+begin
+  insert into site_task (site_id, task_id, domain)
+  values (new.id, 5, new.domain);
+
+  return new;
+end;
+$$ language plpgsql security definer;

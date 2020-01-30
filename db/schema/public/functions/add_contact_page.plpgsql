@@ -1,0 +1,20 @@
+create or replace
+function add_contact_page(
+  asite_id integer,
+  aurl     text
+) returns integer as $$
+declare
+  vid integer;
+begin
+  if exists (select * from contact_page where site_id = asite_id and url = aurl) then
+    return null;
+  end if;
+
+  insert into contact_page(site_id, url)
+  values (asite_id, aurl)
+  returning id into vid;
+
+  return vid;
+end;
+$$ language plpgsql security definer;
+

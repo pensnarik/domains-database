@@ -1,0 +1,22 @@
+create or replace
+function init_session(
+  ainfo     text,
+  aversion  varchar,
+  ahostname text default null::text,
+  ainstance text default null::text,
+  apid      integer default 0
+) returns integer as $$
+declare
+  vid integer;
+begin
+  insert into session (ip, info, version, hostname, instance, pid, backend_pid)
+  values (inet_client_addr(), ainfo, aversion, ahostname, ainstance, apid, pg_backend_pid())
+  returning id into vid;
+
+  perform core.set_variable('session_id', vid::text);
+
+  return vid;
+end;
+$$ language plpgsql security definer;
+
+comment on function public.init_session(text, varchar, text, text, integer) is 'Инициализация сессии в базе данных';

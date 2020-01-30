@@ -1,0 +1,22 @@
+create or replace
+function create_task(
+  atask_name          text,
+  adomain_mask        text,
+  alast_fetch_results site_fetch_result[]
+) returns integer as $$
+declare
+  vid integer;
+begin
+  insert into task (info) values (atask_name)
+  returning id into vid;
+
+  insert into site_task (task_id, site_id)
+  select vid, id
+    from site
+   where domain ~ adomain_mask
+     and last_fetch_result = any(alast_fetch_results);
+
+  return vid;
+end;
+$$ language plpgsql security definer;
+

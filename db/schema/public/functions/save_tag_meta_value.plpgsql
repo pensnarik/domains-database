@@ -1,0 +1,26 @@
+create or replace
+function public.save_tag_meta_value
+(
+    asite_id     integer,
+    atask_id     integer,
+    atag_meta_id integer,
+    avalue       text
+) returns integer as $$
+begin
+    update public.tag_meta_value
+       set value = avalue
+     where task_id = atask_id
+       and site_id = asite_id
+       and tag_meta_id = atag_meta_id;
+
+    if not found then
+        insert into public.tag_meta_value(site_id, task_id, tag_meta_id, value)
+        values (asite_id, atask_id, atag_meta_id, avalue);
+
+        return 1;
+    else
+        return 0;
+    end if;
+end;
+$$ language plpgsql
+   security definer;

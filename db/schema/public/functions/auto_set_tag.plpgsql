@@ -1,0 +1,14 @@
+create or replace
+function auto_set_tag() returns void as $$
+declare
+  r record;
+begin
+  for r in select w.tag_id, t.name, w.key_word from tag_key_word w join tag t on t.id = w.tag_id loop
+    raise notice 'Processing tag %', r.name;
+    perform create_site_tag(s.id, r.tag_id)
+       from site s
+      where s.title ilike r.key_word;
+  end loop;
+end;
+$$ language plpgsql security definer;
+

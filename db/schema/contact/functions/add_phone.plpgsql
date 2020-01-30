@@ -1,0 +1,17 @@
+create or replace
+function contact.add_phone(
+  asite_id integer,
+  aphone   text,
+  adomain  varchar default null
+) returns integer as $$
+begin
+  if not exists (select * from contact.phone where site_id = asite_id and phone = aphone) then
+    insert into contact.phone (site_id, phone, domain) values (asite_id, aphone, adomain);
+    return 1;
+  else
+    return 0;
+  end if;
+end;
+$$ language plpgsql security definer;
+
+comment on function contact.add_phone(integer, text, varchar) is 'Добавляет телефон, возвращает количество (0 или 1)';

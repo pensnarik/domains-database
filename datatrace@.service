@@ -1,0 +1,16 @@
+[Unit]
+Description=Datatrace instance %I
+After=multi-user.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=datatrace
+Group=datatrace
+SyslogIdentifier=datatrace-%i
+ExecStart=/usr/local/bin/datatrace --instance %i
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

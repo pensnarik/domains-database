@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+# -*- encoding: utf-8 -*-
+
+import os
+import time
+import signal
+import logging
+import socket
+
+import psycopg2
+import psycopg2.extras
+
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(message)s',)
+
+
+class App(object):
+    """ Main application class"""
+
+    update_interval = 20
+
+    def __init__(self):
+        signal.signal(signal.SIGTERM, self.terminate)
+        self.dsn = os.environ.get('DATATRACE_DB')
+        if self.dsn is None:
+            print('Please, set $DATATRACE_DB environment variable')
+            sys.exit(1)
+
+    def update_sessions(self):
+        """ We will terminate sessions which have not been
+            updating its status more than 3 hours"""
+        terminated_sessions = list()
+        query = "update public.session " \
+                "set end_time = now(), term_signal = -1 " \
+                "where end_time is null and " \
+                "((now() - last_activity > interval '1 hour') or " \
+                "(last_activity is null and now() - start_time > interval '3 hours')) " \
+                "returning id"
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(query)
+        for row in cursor.fetchall():
+            terminated_sessions.append(row['id'])
+        if len(terminated_sessions) > 0:
+            logger.warning('Terminated sessions: %s' % ','.join(map(str, terminated_sessions)))
+
+        logger.info('Revoking jobs from dead sessions')
+        query = "delete from public.queue " \
+                "where session_id in " \
+                "(select id from public.session where end_time is not null) "
+        cursor.execute(query)
+
+    def get_active_sessions(self):
+        """ Returns array of all active sessions IDs"""
+        active_sessions = list()
+        query = "select id from public.active_sessions where queued < 1000 order by queued"
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cursor.execute(query)
+        for row in cursor.fetchall():
+            active_sessions.append(row['id'])
+        logger.info('Got %s active sessions' % len(active_sessions))
+        return active_sessions
+
+    def dispatch(self, session_id, size=100):
+        """Dispatches jobs to session with ID = session_id"""
+        logger.info('Dispatching %s jobs to session %s' % (size, session_id))
+        query = "select public.dispatch(%(session_id)s, %(count)s)"
+        cursor = self.conn.cursor()
+        cursor.execute(query, {'session_id': session_id, 'count': size})
+        cursor.close()
+
+    def setup(self):
+        """Initialization"""
+        while True:
+            try:
+                self.conn = psycopg2.connect(self.dsn)
+                break
+            except psycopg2.OperationalError:
+                logger.warning('Database at %s is not available yet, will try to reconnect in 5s',
+                               self.dsn)
+                time.sleep(5)
+                continue
+        self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)
+        cursor = self.conn.cursor()
+        cursor.execute("set application_name to 'Queue dispatcher / %s'" % (socket.gethostname()))
+
+    def terminate(self):
+        """SIGTERM signal handler"""
+        logger.warning("Terminating...")
+
+    def run(self):
+        """Application entry point"""
+        self.setup()
+        while True:
+            try:
+                self.update_sessions()
+                active_sessions = self.get_active_sessions()
+                for session_id in active_sessions:
+                    self.dispatch(session_id, size=1000)
+                logger.info('Sleeping')
+                time.sleep(self.update_interval)
+            except psycopg2.OperationalError as e:
+                logger.warning('Database error: %s, sleeping for 10s', str(e))
+                time.sleep(10)
+                continue
+
+
+if __name__ == '__main__':
+    app = App()
+    app.run()

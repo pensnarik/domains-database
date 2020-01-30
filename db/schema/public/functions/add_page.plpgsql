@@ -1,0 +1,15 @@
+create or replace
+function add_page(aurl text) returns integer as $$
+declare
+  vid integer;
+begin
+  if not exists (select * from page where url = aurl) then
+    insert into page (url, status)
+    values (aurl , 'new')
+    returning id into vid;
+  end if;
+
+  return vid;
+end;
+$$ language plpgsql security definer;
+

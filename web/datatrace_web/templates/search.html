@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% set path = '/search' %}
+
+{% block content %}
+
+{% macro ornone(v) -%}
+{% if v %}{{ v }}{% else %}<span class="text-muted">no</span>{% endif %}
+{%- endmacro %}
+
+<div class="row">
+    <div class="col col-md-5">
+        <div class="form">
+            <form action="/search">
+                <div class="form-group">
+                    <label for="domain">Domain</label>
+                    <input class="form-control" type="text" size="40" name="domain" id="domain" value="{% if domain %}{{ domain }}{% endif %}"/>
+                </div>
+                <div class="form-group">
+                    <label for="ip">IP</label>
+                    <input class="form-control" type="text" size="40" name="ip" id="ip" value="{% if ip %}{{ ip }}{% endif %}"/>
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone number</label>
+                    <input class="form-control" type="text" size="40" name="phone" id="phone" value="{% if phone %}{{ phone }}{% endif %}"/>
+                </div>
+                <button class="btn btn-default" type="submit"><span class="glyphicon glyphicon-search"></span> Search</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% if result %}
+
+<br />
+<table class="table table-bordered table-striped table-hover">
+    <thead>
+        <th>Domain</th>
+        <th>IP</th>
+        <th>Title</th>
+        <th>Tags</th>
+        <th>Encoding</th>
+        <th>Response code</th>
+        <th>Server</th>
+        <th>Powered by</th>
+        <th>Create date</th>
+        <th>Last check date</th>
+    </thead>
+
+{% for row in result %}
+<tr {% if row.last_fetch_result != 'ok' %}class = "danger"{% endif %}>
+    <td><a href="http://{{ row.domain }}" target="_blank" rel="noreferrer">{{ row.domain }}</a></td>
+    <td>
+        {% if row.addr %}
+        {% for ip in row.addr %}<a href="/search?ip={{ ip }}">{{ ip }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        {% else %}
+        {{ ornone(row.addr) }}
+        {% endif %}
+    </td>
+    <td>{{ ornone(row.title) }}</td>
+    <td>{{ ornone(row.system_tags_str) }}</td>
+    <td>{{ ornone(row.encoding) }}</td>
+    <td>{{ ornone(row.response_code) }}</td>
+    <td>{{ ornone(row.server) }}</td>
+    <td>{{ ornone(row.powered_by) }}</td>
+    <td>{% if row.last_check_time %}{{ row.create_date.strftime('%Y-%m-%d %H:%M')}}{% else %}<span class="text-muted">нет</span>{% endif %}</td>
+    <td>{% if row.last_check_time %}{{ row.last_check_time.strftime('%Y-%m-%d %H:%M')}}{% else %}<span class="text-muted">нет</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+<a class="btn btn-primary" href="/search?{% if domain %}domain={{ domain }}{% endif %}{% if ip %}&ip={{ ip }}{% endif %}{% if phone %}&phone={{ phone }}{% endif %}&last_domain={{ last_domain }}">Next</a>
+{% else %}
+<p class="warning">Nothing has been found</p>
+{% endif %}
+
+{% endblock %}

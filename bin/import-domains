@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+
+# Generates SQL script which invokes add_domain() stored procedure
+# to add domain to the database
+
+import os
+import sys
+
+class App(object):
+
+    bucket_size = 100
+    bucket = list()
+
+    def generate(self, bucket):
+        print('select public.add_domains(array[%s]);' % ','.join("'%s'" % d for d in bucket))
+
+    def run(self):
+        if len(sys.argv) < 2:
+            print('Usage: imort-domains filename')
+            sys.exit(1)
+
+
+        for line in open(sys.argv[1], 'rt').readlines():
+
+            self.bucket.append(line.split(';')[0].lower())
+
+            if len(self.bucket) == self.bucket_size:
+                self.generate(self.bucket)
+                self.bucket.clear()
+
+        if len(self.bucket) > 0:
+            self.generate(self.bucket)
+
+if __name__ == '__main__':
+    app = App()
+    app.run()

@@ -1,0 +1,48 @@
+create or replace
+function public.u_site() returns trigger as $$
+declare
+  vdate_from timestamp(0);
+begin
+  if old.title is distinct from new.title then
+    update history.site__title set date_till = current_timestamp where site_id = new.id and date_till = 'infinity';
+    if not found then
+      vdate_from := '-infinity';
+    else
+      vdate_from := current_timestamp;
+    end if;
+
+    insert into history.site__title (site_id, date_from, date_till, title)
+    values (new.id, vdate_from, 'infinity', new.title);
+
+  end if;
+
+  if old.server is distinct from new.server then
+    update history.site__server set date_till = current_timestamp where site_id = new.id and date_till = 'infinity';
+    if not found then
+      vdate_from := '-infinity';
+    else
+      vdate_from := current_timestamp;
+    end if;
+
+    insert into history.site__server (site_id, date_from, date_till, server)
+    values (new.id, vdate_from, 'infinity', new.server);
+
+  end if;
+
+  if old.powered_by is distinct from new.powered_by then
+    update history.site__powered_by set date_till = current_timestamp where site_id = new.id and date_till = 'infinity';
+    if not found then
+      vdate_from := '-infinity';
+    else
+      vdate_from := current_timestamp;
+    end if;
+
+    insert into history.site__powered_by (site_id, date_from, date_till, powered_by)
+    values (new.id, vdate_from, 'infinity', new.powered_by);
+
+  end if;
+
+  return new;
+end;
+$$ language plpgsql security definer;
+

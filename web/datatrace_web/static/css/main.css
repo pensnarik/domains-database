@@ -1,0 +1,13 @@
+#menu {
+    padding: 20px;
+}
+
+#content {
+    padding: 20px;
+}
+
+.plot {
+    width: 700px;
+    height: 300px;
+    margin: 0 auto;
+}

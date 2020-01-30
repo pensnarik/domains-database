@@ -1,0 +1,48 @@
+create or replace
+function public.update_stat(afinished_at timestamp, ainterval char) returns integer as $$
+declare
+    vresult integer; sql text;
+    vtable text; vsql_delete text;
+begin
+    if afinished_at < '2018-01-01 00:00:00' then
+        return 0;
+    end if;
+
+    raise warning 'update_stat(%, %)', afinished_at, ainterval;
+
+    vsql_delete := $sql$delete from public.stat_{interval} where finished_at = date_trunc('{interval}', $1)$sql$;
+    vsql_delete := replace(vsql_delete, '{interval}', ainterval);
+
+    execute vsql_delete using afinished_at;
+
+    sql := $sql$
+    with hosts as (
+      select hostname, count(distinct session_id) as sessions
+        from public.stat
+       where finished_at >= date_trunc('{interval}', $1)
+         and finished_at < date_trunc('{interval}', $1) + interval '1 {interval}'
+       group by 1
+    ), cnt as (
+    insert into public.stat_{interval} (finished_at, hostname, fetch_result, sessions, traffic, time_get_item, time_resolve,
+        time_fetch_page, time_parse, time_search_phones, time_search_emails, sites_processed,
+        sites_extracted, sites_added, emails_extracted, emails_added, phones_extracted,
+        phones_added)
+    select date_trunc('{interval}', finished_at), st.hostname, fetch_result, h.sessions, sum(traffic), avg(time_get_item), avg(time_resolve),
+        avg(time_fetch_page), avg(time_parse), avg(time_search_phones), avg(time_search_emails), sum(sites_processed),
+        sum(sites_extracted), sum(sites_added), sum(emails_extracted), sum(emails_added), sum(phones_extracted),
+        sum(phones_added)
+    from public.stat st
+    join hosts h on h.hostname = st.hostname
+    where finished_at >= date_trunc('{interval}', $1) and finished_at < date_trunc('{interval}', $1) + interval '1 {interval}'
+    group by 1, 2, 3, 4
+    returning *
+    ) select count(*) from cnt;
+    $sql$;
+
+    sql := replace(sql, '{interval}', ainterval);
+
+    execute sql into vresult using afinished_at;
+
+    return vresult;
+end;
+$$ language plpgsql;

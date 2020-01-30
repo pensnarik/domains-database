@@ -1,0 +1,246 @@
+{% extends 'base.html' %}
+
+{% set path = '/' %}
+
+{% block content %}
+
+<h3>
+{% if host  %}
+{{ host }} statistic
+{% else %}
+Global statistic
+{% endif %}
+</h3>
+
+<div class="form-inline text-center">
+    <label for="date-from">From</label>
+    <div class="input-group date" id="date-from-picker">
+        <input type="text" class="form-control filter" id="date-from" value="{{ date_from }}">
+        <span class="input-group-addon">
+            <span class="glyphicon glyphicon-calendar"></span>
+        </span>
+    </div>
+
+    <label for="data">Till</label>
+    <div class="input-group date" id="date-till-picker">
+        <input type="text" class="form-control filter" id="date-till" value="{{ date_till }}">
+        <span class="input-group-addon">
+            <span class="glyphicon glyphicon-calendar"></span>
+        </span>
+    </div>
+    <br /><br />
+    <label for="interval">Interval</label>
+    <select name="interval" id="interval" class="form-control">
+        <option value="m" {% if interval == 'm' %}selected="selected"{% endif %}>minute</option>
+        <option value="h" {% if interval == 'h' %}selected="selected"{% endif %}>hour</option>
+        <option value="d" {% if interval == 'd' %}selected="selected"{% endif %}>day</option>
+    </select>
+
+    <label for="host">Host</label>
+    <select name="host" id="host" class="form-control">
+        <option value="">all</option>
+        {% for hostname in hosts %}
+        <option value="{{ hostname }}" {% if hostname == host %}selected="selected"{% endif %}>{{ hostname }}</option>
+        {% endfor %}
+    </select>
+
+    <button class="btn btn-primary" id="update">Refresh</button>
+</div>
+
+<br />
+
+<div class="row">
+    <div class="col-md-6 text-center">
+        <span>Sites proceeded</span>
+        <div id="plot" class="plot"></div>
+    </div>
+    <div class="col-md-6 text-center">
+        <span>Sessions count</span>
+        <div id="plot_sessions" class="plot"></div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-6 text-center">
+        <span>Average operation time, s</span>
+        <div id="plot_times" class="plot"></div>
+    </div>
+    <div class="col-md-6 text-center">
+        <span>Sites processed by host</span>
+        <div id="plot_hosts" class="plot"></div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-6 text-center">
+        <span>Averate site process time, by host</span>
+        <div id="plot_hosts_avg" class="plot"></div>
+    </div>
+    <div class="col-md-6 text-center">
+        <span>Statuses statistics</span>
+        <div id="plot_status" class="plot"></div>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-6 text-center">
+        <span>Traffic</span>
+        <div id="plot_traffic" class="plot"></div>
+    </div>
+</div>
+
+
+{% if interval == 'h' %}
+<br />
+<div class="row">
+    <div class="col-md-9 text-center" style="margin: 0 auto; float: none;">
+        <table class="table table-bordered table-striped table-responsive">
+            <thead>
+                <th>Time</th>
+                <th>Sites processed</th>
+                <th>New sites</th>
+                <th>Phone numbers extracted</th>
+                <th>emails extracted</th>
+                <th>get_item</th>
+                <th>resolve</th>
+                <th>fetch_page</th>
+                <th>parse</th>
+                <th>search_phones</th>
+                <th>search_emails</th>
+                <th>total</th>
+            </thead>
+            <tbody>
+        {% for row in stat %}
+                <tr>
+                    <td>{{ row.date_time.strftime('%Y-%m-%d %H:%M')}}</td>
+                    <td>{{ row.parsed_sites }}</td>
+                    <td>{{ row.new_sites }}</td>
+                    <td>{{ row.new_emails }}</td>
+                    <td>{{ row.new_phones }}</td>
+                    <td>{{ row.avg_get_item }}</td>
+                    <td>{{ row.avg_resolve }}</td>
+                    <td>{{ row.avg_fetch_page }}</td>
+                    <td>{{ row.avg_parse }}</td>
+                    <td>{{ row.avg_search_phones }}</td>
+                    <td>{{ row.avg_search_emails }}</td>
+                    <td>{{ row.avg_total }}</td>
+                </tr>
+        {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<script type="text/javascript">
+
+moment.tz.setDefault("CET");
+
+(function draw() {
+    var hosts_data = {{ hosts_data|safe }};
+    var hosts_data_avg = {{ hosts_data_avg|safe }};
+    var status_data = {{ status_data|safe }};
+
+    var data = {label: "{% if host %}{{ host }}{% else %}All hosts{% endif %}", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.parsed_sites}} }, {% endfor %} ]};
+    var data_sessions = {color: '#800080', label: "Sessions", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.sessions}} }, {% endfor %}]};
+
+    var data_avg_total = {label: "Total", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.avg_total }} }, {% endfor %}]};
+    var data_avg_get_item = {label: "Get item", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.avg_get_item }} }, {% endfor %}]};
+    var data_avg_resolve = {label: "Resolve", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.avg_resolve }} }, {% endfor %}]};
+    var data_avg_fetch_page = {label: "Fetch page", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.avg_fetch_page }} }, {% endfor %}]};
+    var data_avg_parse = {label: "Parse", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.avg_parse }} }, {% endfor %}]};
+
+    var data_traffic = {color: '#008000', label: "Traffic", data: [{% for row in stat %}{Timestamp: '{{ row.date_time.strftime('%Y-%m-%dT%H:%M%Z') }}', Value: {{ row.traffic }} }, {% endfor %}]};
+
+    var options = {lines: {show: true, lineWidth: 1}, xaxis: {mode: 'time'}, legend: {position: 'nw'}};
+
+    var soptions = {xaxis: {mode: 'time'}, series: {stack: true}, lines: {show: true, fill: true, lineWidth: 1},
+                    legend: {position: 'nw'}};
+
+    data['data'] = parseTimestamp(data['data']);
+    data_sessions['data'] = parseTimestamp(data_sessions['data']);
+    data_avg_total['data'] = parseTimestamp(data_avg_total['data']);
+    data_avg_get_item['data'] = parseTimestamp(data_avg_get_item['data']);
+    data_avg_resolve['data'] = parseTimestamp(data_avg_resolve['data']);
+    data_avg_fetch_page['data'] = parseTimestamp(data_avg_fetch_page['data']);
+    data_avg_parse['data'] = parseTimestamp(data_avg_parse['data']);
+    data_traffic['data'] = parseTimestamp(data_traffic['data']);
+
+    for(host in hosts_data) {
+        hosts_data[host] = parseTimestamp(hosts_data[host])
+    }
+    for(host in hosts_data_avg) {
+        hosts_data_avg[host] = parseTimestamp(hosts_data_avg[host])
+    }
+    for(status in status_data) {
+        status_data[status] = parseTimestamp(status_data[status])
+    }
+
+    $.plot('#plot', [data], {lines: {fill: true, lineWidth: 1}, xaxis: {mode: 'time'}});
+    $.plot('#plot_sessions', [data_sessions], {lines: {show: true, lineWidth: 1, fill: true},
+                                               xaxis: {mode: 'time'},
+                                               yaxis: { minTickSize: 1, tickDecimals: 0},
+                                               legend: {position: 'nw'}});
+    $.plot('#plot_times', [data_avg_get_item, data_avg_resolve, data_avg_fetch_page, data_avg_parse], soptions);
+
+    var data_hosts = [];
+    var data_hosts_avg = [];
+    var data_status = [];
+
+    for(var h in hosts_data) {
+        data_hosts.push({label: h, data: hosts_data[h]});
+    }
+
+    for(var h in hosts_data_avg) {
+        data_hosts_avg.push({label: h, data: hosts_data_avg[h]});
+    }
+
+    for (var s in status_data) {
+        data_status.push({label: s, data: status_data[s]});
+    }
+
+    function parseTimestamp(vals) {
+
+        result = vals.map(function(x) {
+        var t = moment.parseZone(x.Timestamp);
+        return [
+            Date.UTC(t.year(), t.month(), t.date(), t.hour(), t.minute(), t.second(), t.millisecond()),
+            x.Value
+        ];
+        });
+        return result;
+    }
+
+    function suffixFormatter(val, axis) {
+        if (val > 1000000000)
+            return (val / 1000000000).toFixed(axis.tickDecimals) + " Gb";
+        else if (val > 1000000)
+            return (val / 1000000).toFixed(axis.tickDecimals) + " Mb";
+        else if (val > 1000)
+            return (val / 1000).toFixed(axis.tickDecimals) + " kB";
+        else
+            return val.toFixed(axis.tickDecimals) + " b";
+    }
+
+    $.plot('#plot_hosts', data_hosts, soptions);
+    $.plot('#plot_hosts_avg', data_hosts_avg, options);
+    $.plot('#plot_status', data_status, soptions);
+    $.plot('#plot_traffic', [data_traffic], {yaxis: {tickFormatter: suffixFormatter}, xaxis: {mode: 'time'},
+        lines: {show: true, fill: true, lineWidth: 1}, legend: {position: 'nw'}});
+
+})();
+
+function update() {
+    window.location = '?date_from=' + $('#date-from').val() +
+        '&date_till=' + $('#date-till').val() + '&interval=' + $('#interval').val() +
+        '&host=' + $('#host').val();
+}
+
+$('.date').datetimepicker({format: "yyyy-mm-dd hh:ii", stepping: 60, minView: 1,
+                           weekStart: 1, language: "en", todayHighlight: true, autoclose: true,
+                           pickerPosition: 'bottom-left'});
+
+$('#update').click(function() {
+    update();
+});
+
+</script>
+
+{% endblock %}

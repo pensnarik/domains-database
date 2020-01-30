@@ -1,0 +1,33 @@
+create or replace
+function public.dispatch
+(
+    asession_id integer,
+    acount      integer
+) returns integer as $$
+declare
+    vresult integer := 0;
+begin
+    with records as (
+      select st.*
+        from public.site_task st
+        join public.task t
+          on t.id = st.task_id
+        order by t.priority
+        limit acount
+    ), deleted as (
+      delete from public.site_task where id in (select id from records) returning id
+    ), result as (
+    insert into public.queue (session_id, site_id, task_id, domain, job)
+    select asession_id, st.site_id, st.task_id, st.domain, job
+      from records st
+      join task t on t.id = st.task_id
+    returning 1 as r )
+    select sum(r) into vresult from result;
+
+    return vresult;
+end;
+$$ language plpgsql
+   security definer;
+
+comment on function public.dispatch(integer, integer)
+  is 'Dispatches acount of tasks from site_task to the given session. Called by datatrace-dispatcher';

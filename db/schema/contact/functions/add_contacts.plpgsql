@@ -1,0 +1,18 @@
+create or replace
+function contact.add_contacts
+(
+    asite_id integer,
+    aemails text[],
+    aphones text[],
+    adomain varchar default null,
+    oemails out integer,
+    ophones out integer
+) as $$
+begin
+    select coalesce(sum(contact.add_email(asite_id, email)), 0) into oemails from unnest(aemails) email;
+    select coalesce(sum(contact.add_phone(asite_id, phone, adomain)), 0) into ophones from unnest(aphones) phone;
+end;
+$$ language plpgsql;
+
+comment on function contact.add_contacts(integer, text[], text[], varchar, out integer, out integer)
+    is 'Добавляет email и телефоны, возвращает количество добаленных записей';

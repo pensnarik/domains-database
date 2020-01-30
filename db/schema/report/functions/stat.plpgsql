@@ -1,0 +1,93 @@
+create or replace
+function report.stat
+(
+    adate_from timestamptz,
+    adate_till timestamptz,
+    ahostname  varchar default null,
+    ainterval char default 'm'
+) returns table
+(
+    date_time         timestamptz,
+    date_time_ux      bigint,
+    parsed_sites      integer,
+    new_sites         integer,
+    new_emails        integer,
+    new_phones        integer,
+    avg_get_item      numeric,
+    avg_resolve       numeric,
+    avg_fetch_page    numeric,
+    avg_parse         numeric,
+    avg_search_phones numeric,
+    avg_search_emails numeric,
+    avg_total         numeric,
+    sessions          integer,
+    traffic           bigint
+) as $$
+declare
+  vtable text; vsql text; vmin_date timestamptz;
+begin
+    adate_from := date_trunc(ainterval, adate_from);
+    adate_till := date_trunc(ainterval, adate_till);
+    select min(start_time) from public.session into vmin_date;
+
+    vsql := $sql$
+    with last_updated as (select coalesce(max(finished_at), $1)::timestamp as dt_last from public.stat_{interval})
+
+    select public.update_stat(t::timestamp, '{interval}')
+      from generate_series((select dt_last from last_updated), $2, interval '1 {interval}') t
+    $sql$;
+
+    vsql := replace(vsql, '{interval}', ainterval);
+
+    raise notice '%', vsql;
+
+    execute vsql using vmin_date, adate_till;
+
+    vsql := $sql$
+    with sessions as (
+      select t.finished_at,
+             t.hostname,
+             max(t.sessions) as sessions
+        from public.stat_{interval} t
+       where t.finished_at >= $2 and t.finished_at < $3
+         and (t.hostname = $1 or $1 is null)
+       group by 1, 2
+    ), statistics as (
+      select *, row_number() over (partition by t.finished_at, t.hostname order by t.finished_at, t.hostname, t.fetch_result) as rn
+        from public.stat_{interval} t
+       where t.finished_at >= $2 and t.finished_at < $3
+         and (t.hostname = $1 or $1 is null)
+    )
+    select t.d,
+           extract('epoch' from t.d)::bigint * 1000,
+           coalesce(sum(st.sites_processed), 0)::integer as parsed_sites,
+           coalesce(sum(st.sites_added), 0)::integer as new_sites,
+           coalesce(sum(st.emails_added), 0)::integer as new_emails,
+           coalesce(sum(st.phones_added), 0)::integer as new_phones,
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_get_item else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_resolve else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_fetch_page else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_parse else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_search_phones else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_search_emails else null end), 3), 0),
+           coalesce(round(avg(case when st.fetch_result = 'ok' then time_get_item + time_resolve + time_fetch_page + time_parse +
+                    time_search_phones + time_search_emails else null end), 3), 0),
+           coalesce(case when $1 is null then sum(case when rn = 1 then s.sessions else 0 end)::integer else max(s.sessions) end, 0)::integer,
+           coalesce(sum(st.traffic), 0)::bigint
+      from (select generate_series($2, $3, interval '1 {interval}') d) t
+      left join statistics st
+        on t.d = st.finished_at
+       and (st.hostname = $1 or $1 is null)
+      left join sessions s
+        on t.d = s.finished_at
+       and s.hostname = st.hostname
+     where t.d >= $2 and t.d < $3
+     group by 1, 2
+     order by 1 desc;
+     $sql$;
+
+     vsql := replace(vsql, '{interval}', ainterval);
+
+     return query execute vsql using ahostname, adate_from, adate_till;
+end;
+$$ language plpgsql;

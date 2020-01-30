@@ -1,0 +1,21 @@
+create or replace
+function public.on_system_tags_changed(
+  asite_id         integer,
+  atask_id         integer,
+  aold_system_tags integer[],
+  anew_system_tags integer[]
+) returns void as $$
+begin
+  insert into history.system_tag_log (site_id, tag_id, action, task_id)
+  select asite_id,
+         e.tag_id,
+         case when a1.i is null then 'added'::tag_action_mnemonic else 'removed'::tag_action_mnemonic end,
+         atask_id
+    from (select unnest(aold_system_tags) i) a1
+    full outer join (select unnest(anew_system_tags) i) a2 on a1.i = a2.i
+    join config.expression e on e.id = coalesce(a1.i, a2.i)
+   where a1.i is null or a2.i is null;
+end;
+$$ language plpgsql security definer;
+
+comment on function public.on_system_tags_changed(asite_id integer, atask_id integer, aold_system_tags integer[], anew_system_tags integer[]) is 'Вызывается при изменении найденных тэгов';

@@ -1,0 +1,25 @@
+create or replace
+function public.get_next_item
+(
+    asession_id integer,
+    atask_id    integer default null
+) returns table (
+    id           integer,
+    site_id      integer,
+    task_id      integer,
+    domain       varchar,
+    job          varchar
+) as $$
+begin
+    return query
+    select q.id,
+           q.site_id,
+           q.task_id,
+           q.domain,
+           q.job
+      from public.queue q
+     where q.session_id = asession_id
+       and (q.task_id = atask_id or atask_id is null)
+     limit 1;
+end;
+$$ language plpgsql set enable_seqscan to 'off';

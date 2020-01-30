@@ -1,0 +1,12 @@
+create or replace
+function create_site_tag(
+  asite_id integer,
+  atag_id  integer
+) returns void as $$
+begin
+  if not exists (select 1 from site_tag where site_id = asite_id and tag_id = atag_id) then
+    insert into site_tag(site_id, tag_id) values (asite_id, atag_id);
+  end if;
+end;
+$$ language plpgsql security definer;
+

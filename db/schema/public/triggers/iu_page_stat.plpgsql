@@ -1,0 +1,22 @@
+create or replace
+function public.iu_page_stat() returns trigger as $$
+begin
+
+  if TG_OP = 'INSERT' then
+
+    perform update_stat(0, 0, 0, 0, 0, 1);
+
+  elsif TG_OP = 'UPDATE' then
+
+    if new.fetch_result is distinct from old.fetch_result and new.fetch_result is not null then
+
+      perform update_stat(0, 0, 0, 0, 1, 0);
+
+    end if;
+
+  end if;
+
+  return new;
+end;
+$$ language plpgsql security definer;
+

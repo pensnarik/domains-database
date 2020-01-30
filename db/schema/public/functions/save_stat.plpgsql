@@ -1,0 +1,34 @@
+create or replace
+function public.save_stat
+(
+    adomain              varchar,
+    asession_id          integer,
+    ahostname            varchar,
+    afetch_result        site_fetch_result,
+    atraffic             integer,
+    atime_get_item       numeric,
+    atime_resolve        numeric,
+    atime_fetch_page     numeric,
+    atime_parse          numeric,
+    atime_search_phones  numeric,
+    atime_search_emails  numeric,
+    asites_processed     smallint,
+    asites_extracted     smallint,
+    asites_added         smallint,
+    aemails_extracted    smallint,
+    aemails_added        smallint,
+    aphones_extracted    smallint,
+    aphones_added        smallint
+) returns void as $$
+begin
+    insert into public.stat (domain, session_id, hostname, fetch_result, traffic, time_get_item, time_resolve,
+        time_fetch_page, time_parse, time_search_phones, time_search_emails, sites_processed,
+        sites_extracted, sites_added, emails_extracted, emails_added, phones_extracted,
+        phones_added)
+    values (adomain, asession_id, ahostname, afetch_result, atraffic, atime_get_item, atime_resolve,
+        atime_fetch_page, atime_parse, atime_search_phones, atime_search_emails, asites_processed,
+        asites_extracted, asites_added, aemails_extracted, aemails_added, aphones_extracted,
+        aphones_added);
+end;
+$$ language plpgsql
+   security definer;

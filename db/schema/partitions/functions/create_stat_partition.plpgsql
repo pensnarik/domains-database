@@ -1,0 +1,18 @@
+create function partitions.create_stat_partition(partition date) returns text as $$
+declare
+    sql text;
+begin
+    sql := format($sql$
+        create table partitions.stat__%1$s partition of public.stat
+        for values from ('%2$s') to ('%3$s');
+
+        create index stat__%1$s_finished_at on partitions.stat__%1$s (finished_at);
+    $sql$,
+    to_char(partition, 'YYYY_MM_DD'),
+    to_char(partition, 'YYYY-MM-DD 00:00:00+00'),
+    to_char(partition + interval '1 day', 'YYYY-MM-DD 00:00:00+00')
+    );
+    EXECUTE sql;
+    RETURN 'partitions.stat__' || to_char(partition, 'YYYY_MM_DD');
+end;
+$$ language plpgsql;

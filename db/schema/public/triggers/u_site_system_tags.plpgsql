@@ -1,0 +1,18 @@
+create or replace
+function public.u_site_system_tags() returns trigger as $$
+begin
+  -- TODO Replace 59 with variable or alias
+  if 59 = any(new.system_tags) and (old.system_tags is null or (not (59 = any(old.system_tags)))) then
+    /* Если для сайта найдены потенциально уязвимые ссылки - добавляем в задачу
+       на проверку SQL Injection */
+    insert into public.site_task (site_id, task_id, domain, job)
+    select new.id, 100, new.domain, 'CheckSQLInjection'
+    where not exists (select * from public.site_task where site_id = new.id and task_id = 100);
+  end if;
+
+  if old.last_fetch_result = 'ok' and new.last_fetch_result = 'ok' then
+    perform public.on_system_tags_changed(new.id, new.last_task_id, coalesce(old.system_tags, '{}'::int[]) , coalesce(new.system_tags, '{}'::int[]));
+  end if;
+  return new;
+end;
+$$ language plpgsql security definer;

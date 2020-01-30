@@ -1,0 +1,16 @@
+[Unit]
+Description=Datatrace Web Admin
+After=multi-user.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=datatrace
+Group=datatrace
+SyslogIdentifier=datatrace-web
+ExecStart=/usr/bin/uwsgi -w datatrace_web:app --socket 127.0.0.1:9000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,16 @@
+[Unit]
+Description=Datatrace Queue Dispatcher
+After=multi-user.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=datatrace
+Group=datatrace
+SyslogIdentifier=datatrace-dispatcher
+ExecStart=/usr/local/bin/datatrace-dispatcher
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

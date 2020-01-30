@@ -1,0 +1,4 @@
+requests
+timeout-decorator
+psycopg2
+lxml

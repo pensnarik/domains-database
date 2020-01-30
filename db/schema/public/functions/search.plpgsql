@@ -1,0 +1,56 @@
+create or replace
+function public.search
+(
+    adomain      varchar,
+    aaddr        inet default null,
+    aphone       varchar default null,
+    alast_domain varchar default null
+) returns table
+(
+    id                bigint,
+    domain            varchar,
+    encoding          varchar,
+    response_code     smallint,
+    title             varchar,
+    server            varchar,
+    powered_by        varchar,
+    last_check_time   timestamptz,
+    addr              inet[],
+    last_fetch_result site_fetch_result,
+    system_tags       integer[],
+    system_tags_str   varchar,
+    create_date       timestamptz
+) as $$
+declare
+    vsql text;
+begin
+    if (adomain is null and aaddr is null and aphone is null) or
+       (adomain is not null and length(adomain) < 3) then
+       raise warning 'Invalid arguments';
+       return;
+    end if;
+
+    vsql := $sql$
+    with phones as
+    (
+      select distinct ph.domain
+        from contact.phone ph
+       where ph.phone like $3 || '%'
+         and $3 is not null
+    ), data as (
+      select s.id, s.domain, s.encoding, s.response_code, s.title,
+             s.server, s.powered_by, s.last_check_time, s.addr,
+             s.last_fetch_result, s.system_tags, config.tags_as_str(s.system_tags),
+             s.create_date
+        from site s
+       where (s.domain like $1 || '%' or $1 is null)
+         and (s.domain in (select domain from phones) or $3 is null)
+         and (array[$2] <@ s.addr or $2 is null)
+         and (s.domain > $4 or $4 is null)
+    ) select * from data order by domain limit 100;
+    $sql$;
+
+    return query
+      execute vsql using adomain, aaddr, aphone, alast_domain;
+end;
+$$ language plpgsql set enable_seqscan = 'off';

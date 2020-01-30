@@ -1,0 +1,2 @@
+recursive-include datatrace_web/templates *
+recursive-include datatrace_web/static *
