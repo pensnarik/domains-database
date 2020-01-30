@@ -1,13 +1,12 @@
 create or replace
 function public.add_domains
 (
-  adomains           text[],
-  afrom_site_task_id integer default null::integer
+  adomains           text[]
 ) returns integer as $$
 declare
   vcount integer := 0;
 begin
-  select sum(public.add_domain(domain, afrom_site_task_id))
+  select sum(public.add_domain(domain))
     into vcount
     from unnest(adomains) domain;
 
@@ -15,4 +14,4 @@ begin
 end;
 $$ language plpgsql security definer;
 
-comment on function public.add_domains(text[], integer) is 'Добавляет новые домены, возвращает количетсво новых доменов';
+comment on function public.add_domains(text[]) is 'Добавляет новые домены, возвращает количетсво новых доменов';

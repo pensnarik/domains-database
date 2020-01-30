@@ -210,7 +210,6 @@ create table public.site (
     last_task_id        integer,
     success_count       smallint default 0,
     error_count         smallint default 0,
-    from_site_task_id   integer,
     constraint site_domain_check CHECK (((domain)::text ~ '([a-z0-9-]+){1,3}\.[a-z]{2,}'::text))
 ) partition by list (left(md5(domain), 2));
 
@@ -402,7 +401,6 @@ $$ language plpgsql security definer;
 create or replace
 function public.add_domain(
   adomain                text,
-  afrom_site_task_id     integer default null::integer,
   askip_reference_update boolean default true
 ) returns integer as $$
 declare
@@ -425,9 +423,9 @@ begin
        and left(md5(domain), 2) = vpartition
   ) then
     execute format($sql$
-    insert into partitions.site__%1$s (domain, from_site_task_id)
-    values ($1, $2);
-    $sql$, vpartition) using adomain, afrom_site_task_id;
+    insert into partitions.site__%1$s (domain)
+    values ($1);
+    $sql$, vpartition) using adomain;
 
     return 1;
   else
@@ -439,18 +437,17 @@ exception when unique_violation then
 end;
 $$ language plpgsql security definer;
 
-comment on function public.add_domain(text, integer, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';
+comment on function public.add_domain(text, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';
 
 create or replace
 function public.add_domains
 (
-  adomains           text[],
-  afrom_site_task_id integer default null::integer
+  adomains           text[]
 ) returns integer as $$
 declare
   vcount integer := 0;
 begin
-  select sum(public.add_domain(domain, afrom_site_task_id))
+  select sum(public.add_domain(domain))
     into vcount
     from unnest(adomains) domain;
 
@@ -458,7 +455,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
-comment on function public.add_domains(text[], integer) is 'Добавляет новые домены, возвращает количетсво новых доменов';
+comment on function public.add_domains(text[]) is 'Добавляет новые домены, возвращает количетсво новых доменов';
 
 create schema core;
 

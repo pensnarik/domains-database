@@ -563,7 +563,7 @@ class App():
 
             if len(domains) > 0:
                 logger.warning('Domains: %s', ', '.join(domains))
-                sites_added = self.s.get_value('select public.add_domains(%s, %s)', (domains, task_item_id,))
+                sites_added = self.s.get_value('select public.add_domains(%s)', (domains,))
             else:
                 sites_added = 0
 

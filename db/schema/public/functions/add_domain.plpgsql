@@ -1,7 +1,6 @@
 create or replace
 function public.add_domain(
   adomain                text,
-  afrom_site_task_id     integer default null::integer,
   askip_reference_update boolean default true
 ) returns integer as $$
 declare
@@ -24,9 +23,9 @@ begin
        and left(md5(domain), 2) = vpartition
   ) then
     execute format($sql$
-    insert into partitions.site__%1$s (domain, from_site_task_id)
-    values ($1, $2);
-    $sql$, vpartition) using adomain, afrom_site_task_id;
+    insert into partitions.site__%1$s (domain)
+    values ($1);
+    $sql$, vpartition) using adomain;
 
     return 1;
   else
@@ -38,4 +37,4 @@ exception when unique_violation then
 end;
 $$ language plpgsql security definer;
 
-comment on function public.add_domain(text, integer, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';
+comment on function public.add_domain(text, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';

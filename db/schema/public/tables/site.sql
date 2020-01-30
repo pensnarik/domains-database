@@ -16,7 +16,6 @@ create table public.site (
     last_task_id        integer,
     success_count       smallint default 0,
     error_count         smallint default 0,
-    from_site_task_id   integer,
     constraint site_domain_check CHECK (((domain)::text ~ '([a-z0-9-]+){1,3}\.[a-z]{2,}'::text))
 ) partition by list (left(md5(domain), 2));
 
