@@ -6,7 +6,7 @@ install:
   - pip install pytest
 bedore_script:
   - python3 setup.py sdist
-  - find dist -name "*.tar.gz" -exec sudo pip3 install -U {} \;
+  - find dist -name "*.tar.gz" -exec sudo -E pip install -U {} \;
 # command to run tests
 script:
   - pytest -q tests/test_web.py
