@@ -8,7 +8,8 @@ from distutils.util import convert_path
 
 def prepare():
     if os.getuid() != 0:
-        raise Exception('This command must be run under root')
+        # This means we run in virtualenv
+        return
 
     try:
         grp.getgrnam('datatrace')
