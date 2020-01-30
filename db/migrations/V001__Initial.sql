@@ -642,9 +642,7 @@ begin
     with records as (
       select st.*
         from public.site_task st
-        join public.task t
-          on t.id = st.task_id
-        order by t.priority
+        order by st.id
         limit acount
     ), deleted as (
       delete from public.site_task where id in (select id from records) returning id
