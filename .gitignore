@@ -1,0 +1,7 @@
+*.pyc
+*.log
+build/
+dist/
+*.config
+*.egg-info
+docker-datatrace/*.tar.gz
