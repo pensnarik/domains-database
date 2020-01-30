@@ -68,6 +68,6 @@ setup(name="datatrace",
       scripts=['bin/datatrace', 'bin/datatrace-dispatcher'],
       packages=['datatrace', 'datatrace.spyder'],
       install_requires=["psycopg2", "requests", "timeout-decorator", "lxml"],
-      data_files=[('lib/systemd/system', ['datatrace@.service', 'datatrace-dispatcher.service'])],
+      data_files=[('lib/systemd/system', ['datatrace@.service', 'datatrace-dispatcher.service', 'datatrace.target'])],
       cmdclass={'prepare': PrepareUser, 'install': PrepareInstall}
 )
