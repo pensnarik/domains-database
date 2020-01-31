@@ -3,9 +3,20 @@
 # Datatrace Crawler
 
 Datatrace is a project aimed to collect and keep up to date the list of all active Internet domains.
-In addition, tool gathers some extra information: web site encoding, page size, scripts used on
-the web site's main page and so forth. The tools is written in Python3 and uses
-[PostgreSQL](https://www.postgresql.org/) database as a storage engine.
+In addition, tool gathers some extra information about website background: web site encoding, page
+size, scripts used on the web site's main page and so forth. The tools is written in Python3 and
+uses [PostgreSQL](https://www.postgresql.org/) database as a storage engine. Currently there are
+about 3.5 million domains in the database.
+
+# Usage
+
+## Running in Docker
+
+To run the whole application in Docker environment use provided `docker-compose.yml` file:
+
+```bash
+docker-compose up
+```
 
 ## Create a package
 
@@ -54,8 +65,14 @@ $ datatrace --domain example.com
 2017-12-26 17:24:42,179 - INFO - Result status is "ok"
 ```
 
-When using this mode no sessions in database will be created and no information will be saved in database.
+When using this mode no sessions in database will be created and no information will be saved in the
+database.
 
 ### Logging expressions search
 
 Use flag `--log-expressions`.
+
+# Contributing
+
+To understand what technologies are used on a website, tool uses [regular expression database](./db/migrations/V004__config.expressions.sql). In order to add a new one you can make a PR. You can also refer the
+"Issues" and contribute by writing a few lines of code.
