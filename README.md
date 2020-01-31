@@ -74,5 +74,5 @@ Use flag `--log-expressions`.
 
 # Contributing
 
-To understand what technologies are used on a website, tool uses [regular expression database](./db/migrations/V004__config.expressions.sql). In order to add a new one you can make a PR. You can also refer the
+To understand what technologies are used on a website, tool uses [regular expression database](./db/migrations/V004__config_expression.sql). In order to add a new one you can make a PR. You can also refer the
 "Issues" and contribute by writing a few lines of code.
