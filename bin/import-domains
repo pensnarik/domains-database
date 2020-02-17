@@ -22,7 +22,7 @@ class App(object):
 
         for line in open(sys.argv[1], 'rt').readlines():
 
-            self.bucket.append(line.split(';')[0].lower())
+            self.bucket.append(line.split(';')[0].lower().strip())
 
             if len(self.bucket) == self.bucket_size:
                 self.generate(self.bucket)
