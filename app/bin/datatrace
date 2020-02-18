@@ -458,6 +458,13 @@ class App():
             # host resolving failure
             self.operation_times.resolve = datetime.now() - date_start
             logger.error(str(e))
+            self.s.execute("update public.site set last_check_time = now(), " \
+                           "last_fetch_result = 'resolve_error'," \
+                           "last_task_id = %s, " \
+                           "error_count = error_count + 1 " \
+                           "where domain = %s " \
+                           "and left(md5((domain)::text), 2) = %s",
+                           task_id, domain, self.get_site_partition(domain))
             return {'status': 'error', 'fetch_result': 'resolve_error', 'error': str(e),
                     'stat': {'sites_processed': 1}, 'traffic': 0}
 

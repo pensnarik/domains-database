@@ -16,7 +16,7 @@ services:
       - '25000:5432'
   datatrace-app:
     image: datatrace-app
-    build: ./docker-datatrace
+    build: ./app
     networks:
       - datatrace
     deploy:
@@ -26,7 +26,7 @@ services:
       DATATRACE_DB: 'postgresql://datatrace@datatrace-db/datatrace'
   datatrace-dispatcher:
     image: datatrace-app
-    build: ./docker-datatrace
+    build: ./app
     networks:
       - datatrace
     environment:

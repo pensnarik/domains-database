@@ -58,7 +58,7 @@ class App(object):
         cursor.execute(query)
         for row in cursor.fetchall():
             active_sessions.append(row['id'])
-        logger.info('Got %s active sessions' % len(active_sessions))
+        logger.info('Got %s sessions required new jobs' % len(active_sessions))
         return active_sessions
 
     def dispatch(self, session_id, size=100):
@@ -67,7 +67,9 @@ class App(object):
         query = "select public.dispatch(%(session_id)s, %(count)s)"
         cursor = self.conn.cursor()
         cursor.execute(query, {'session_id': session_id, 'count': size})
+        result = cursor.fetchone()
         cursor.close()
+        logger.info('%s jobs dispatched', result[0])
 
     def setup(self):
         """Initialization"""

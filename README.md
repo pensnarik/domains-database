@@ -18,6 +18,11 @@ To run the whole application in Docker environment use provided `docker-compose.
 docker-compose up
 ```
 
+To run the crawler in debug mode for a concrete domain use the following command:
+```bash
+docker-compose run datatrace-app datatrace --domain "kernel.org"
+```
+
 ## Create a package
 
 ```bash

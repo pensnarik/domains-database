@@ -327,7 +327,8 @@ create table public.site_task
   task_id     integer not null references task(id),
   site_id     integer not null,
   domain      varchar(255),
-  job         varchar(126)
+  job         varchar(126),
+  dt          timestamptz default now()
 );
 
 alter table only site_task
@@ -648,9 +649,8 @@ begin
       delete from public.site_task where id in (select id from records) returning id
     ), result as (
     insert into public.queue (session_id, site_id, task_id, domain, job)
-    select asession_id, st.site_id, st.task_id, st.domain, job
+    select asession_id, st.site_id, st.task_id, st.domain, st.job
       from records st
-      join task t on t.id = st.task_id
     returning 1 as r )
     select sum(r) into vresult from result;
 
