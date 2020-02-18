@@ -5,6 +5,7 @@ python:
 install:
   - pip3 install pytest
 bedore_script:
+  - cd app
   - python3 setup.py sdist
   - find dist -name "*.tar.gz" -exec pip3 install -U {} \;
 # command to run tests
