@@ -1,7 +1,6 @@
 FROM python:3
-ENV VERSION=0.6.15
-COPY datatrace-${VERSION}.tar.gz /
+COPY datatrace-*.tar.gz /
 COPY datatrace.config /etc/
-RUN pip install -U /datatrace-${VERSION}.tar.gz
+RUN ls /datatrace*.tar.gz | xargs -n 1 pip install -U
 
 CMD ["python", "/usr/local/bin/datatrace"]
