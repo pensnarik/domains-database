@@ -259,6 +259,7 @@ class App():
                 self.save_task(item['id'], item['domain'], item['site_id'], 'error',
                                'unknown_error', self.operation_times, {'sites_processed': 1},
                                str(e))
+                self.save_failed_attempt(domain, 'unknown_error', item['task_id'])
 
             self.update_activity(sites_processed=1)
 
@@ -275,7 +276,7 @@ class App():
     def save_site(self, domain, encoding, title, server, powered_by, size, response_code,
                   system_tags, fetch_result, task_id):
         """
-        Sace task results in the public.site table
+        Save the results in the public.site table
         """
         query = "update public.site set encoding = %s, title = %s, server = %s, powered_by = %s, " \
                 "size = %s, response_code = %s, system_tags = %s, last_check_time = now(), " \
@@ -291,6 +292,15 @@ class App():
                               0 if fetch_result == 'ok' else 1,
                               domain,
                               self.get_site_partition(domain))
+
+    def save_failed_attempt(self, domain, fetch_result, task_id):
+        return self.s.execute("update public.site set last_check_time = now(), " \
+                              "last_fetch_result = %s," \
+                              "last_task_id = %s, " \
+                              "error_count = error_count + 1 " \
+                              "where domain = %s " \
+                              "and left(md5((domain)::text), 2) = %s",
+                              fetch_result, task_id, domain, self.get_site_partition(domain))
 
     def save_task(self, id, domain, site_id, status, fetch_result, operation_times, stat,
                   error=None):
@@ -458,13 +468,7 @@ class App():
             # host resolving failure
             self.operation_times.resolve = datetime.now() - date_start
             logger.error(str(e))
-            self.s.execute("update public.site set last_check_time = now(), " \
-                           "last_fetch_result = 'resolve_error'," \
-                           "last_task_id = %s, " \
-                           "error_count = error_count + 1 " \
-                           "where domain = %s " \
-                           "and left(md5((domain)::text), 2) = %s",
-                           task_id, domain, self.get_site_partition(domain))
+            self.save_failed_attempt(domain, 'resolve_error', task_id)
             return {'status': 'error', 'fetch_result': 'resolve_error', 'error': str(e),
                     'stat': {'sites_processed': 1}, 'traffic': 0}
 
@@ -485,6 +489,8 @@ class App():
             result = {'status': 'timeout', 'data': None, 'status_code': None, 'headers': None,
                       'size': None, 'error': 'Timeout'}
 
+        # FIXME: This will never be executed because in case of 'unknown_error' the
+        # exception is re-raised in web.get_page()
         if result['status'] == 'unknown_error':
             if not self.debug:
                 self.s.execute("insert into log.error(session_id, site_id, message) "
