@@ -2,7 +2,6 @@
 """Datatrace module implements methods for parsing web pages
 and extract valuable data from them.
 
-Todo: leave only 1 option in get_config_filename() function
 """
 import os
 
