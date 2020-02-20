@@ -588,6 +588,12 @@ class App():
                 self.save_site(domain, charset, 'Title encode error', server, powered_by,
                                result['size'], result['status_code'], system_tags, result['status'],
                                task_id)
+            except ValueError as e:
+                # An edge-case, the possible exception is:
+                # ValueError: A string literal cannot contain NUL (0x00) characters.
+                self.save_failed_attempt(domain, 'unknown_error', task_id)
+                self.s.execute("insert into log.error(session_id, site_id, message) "
+                               "values (%s, %s, %s)", self.session_id, site_id, str(e))
 
             return {'status': 'done', 'fetch_result': result['status'], 'error': None, 'stat': stat}
         else:
