@@ -66,13 +66,15 @@ def get_page(url):
             data = raw_data.getvalue().decode(charset or 'utf-8')
         except UnicodeDecodeError as e:
             try:
+                logger.debug('Trying to re-encode using cp1251')
                 data = raw_data.getvalue().decode('cp1251')
             except UnicodeDecodeError as e:
+                logger.debug('Trying to decode using utf-8 with replace')
                 data = raw_data.getvalue().decode('utf-8', 'replace')
         except LookupError:
             fetch_result = 'unknown_encoding'
-        else:
-            fetch_result = 'ok'
+
+        fetch_result = 'ok'
     except SpyderError as err:
         fetch_result = err.value
     except (requests.Timeout, socket.timeout):

@@ -20,7 +20,6 @@ import signal
 import logging
 import argparse
 import traceback
-import configparser
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from hashlib import md5
@@ -29,7 +28,7 @@ import psycopg2
 import psycopg2.extras
 from timeout_decorator import TimeoutError
 
-from datatrace import __version__, __version_info__, get_config_filename
+from datatrace import __version__, __version_info__
 from datatrace.sql import Sql
 from datatrace.spyder import parser, web, popular_hosts
 from datatrace.spyder.job import JobCheckSQLInjection
@@ -100,9 +99,6 @@ class App():
 
         signal.signal(signal.SIGINT, self.terminate)
         signal.signal(signal.SIGTERM, self.terminate)
-
-        self.config = configparser.ConfigParser()
-        self.config.read(get_config_filename())
 
         if self.args.job is not None and self.args.domain is None:
             raise Exception('Please, use --domain option with --job to specify a domain to proceed')
@@ -200,6 +196,8 @@ class App():
 
             site_id = self.s.get_value('select id from site where domain = %s', (self.args.domain,))
 
+            # FIXME: A top-level exception is not handled here as it done in the loop
+            # when self.args.domain is not specified
             self.process_site(None, None, site_id, self.args.domain)
             self.end_session()
             return
@@ -620,7 +618,7 @@ class App():
         we receive SIGTERM when the program is run under systemd daemon as a result
         of `systemctl stop datatrace@<instance>` command
         """
-        logger.info('Terminating session %s...', self.session_id)
+        logger.warning('Terminating session %s on signal %s...', self.session_id, signal_number)
         stack_trace = ''.join(traceback.format_stack(stack_frame))
         logger.info(stack_trace)
 
