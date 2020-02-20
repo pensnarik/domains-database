@@ -6,7 +6,7 @@ Todo: leave only 1 option in get_config_filename() function
 """
 import os
 
-__version__ = '0.6.17'
+__version__ = '0.6.18'
 __version_info__ = 'Datatrace Crawler, version %s' % __version__
 
 def get_config_filename():

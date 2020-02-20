@@ -179,7 +179,6 @@ class App():
     def update_activity(self, sites_processed=0):
         query = "select public.update_activity(%s, %s)"
         self.s.execute(query, self.session_id, sites_processed)
-        logger.info('Activity updated')
 
     def run(self):
         """
@@ -230,7 +229,6 @@ class App():
             item = self.lock()
 
             if item is None:
-                logger.info('No items were fetched, sleeping...')
                 # Updating last activity to prevent the session to be
                 # killed by datatrace-dispatcher
                 self.update_activity()
