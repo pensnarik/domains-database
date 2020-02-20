@@ -489,12 +489,11 @@ class App():
             result = {'status': 'timeout', 'data': None, 'status_code': None, 'headers': None,
                       'size': None, 'error': 'Timeout'}
 
-        # FIXME: This will never be executed because in case of 'unknown_error' the
-        # exception is re-raised in web.get_page()
         if result['status'] == 'unknown_error':
             if not self.debug:
                 self.s.execute("insert into log.error(session_id, site_id, message) "
                                "values (%s, %s, %s)", self.session_id, site_id, result['error'])
+
             logger.error('Unhandled exception: %s', result['error'])
 
         self.operation_times.fetch_page = datetime.now() - date_start

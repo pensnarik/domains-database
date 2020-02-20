@@ -84,7 +84,6 @@ def get_page(url):
     except Exception as e:
         fetch_result = 'unknown_error'
         error = str(e)
-        raise
     finally:
         del s
 
