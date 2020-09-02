@@ -1,1 +1,1 @@
-conn: postgresql://migrator@/datatrace
+conn: dbname=datatrace user=postgres

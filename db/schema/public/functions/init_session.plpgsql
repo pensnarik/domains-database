@@ -13,8 +13,6 @@ begin
   values (inet_client_addr(), ainfo, aversion, ahostname, ainstance, apid, pg_backend_pid())
   returning id into vid;
 
-  perform core.set_variable('session_id', vid::text);
-
   return vid;
 end;
 $$ language plpgsql security definer;
