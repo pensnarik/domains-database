@@ -20,7 +20,6 @@ import signal
 import logging
 import argparse
 import traceback
-import configparser
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from hashlib import md5
@@ -29,7 +28,7 @@ import psycopg2
 import psycopg2.extras
 from timeout_decorator import TimeoutError
 
-from datatrace import __version__, __version_info__, get_config_filename
+from datatrace import __version__, __version_info__
 from datatrace.sql import Sql
 from datatrace.spyder import parser, web, popular_hosts
 from datatrace.spyder.job import JobCheckSQLInjection
@@ -100,9 +99,6 @@ class App():
 
         signal.signal(signal.SIGINT, self.terminate)
         signal.signal(signal.SIGTERM, self.terminate)
-
-        self.config = configparser.ConfigParser()
-        self.config.read(get_config_filename())
 
         if self.args.job is not None and self.args.domain is None:
             raise Exception('Please, use --domain option with --job to specify a domain to proceed')
@@ -179,7 +175,6 @@ class App():
     def update_activity(self, sites_processed=0):
         query = "select public.update_activity(%s, %s)"
         self.s.execute(query, self.session_id, sites_processed)
-        logger.info('Activity updated')
 
     def run(self):
         """
@@ -201,6 +196,8 @@ class App():
 
             site_id = self.s.get_value('select id from site where domain = %s', (self.args.domain,))
 
+            # FIXME: A top-level exception is not handled here as it done in the loop
+            # when self.args.domain is not specified
             self.process_site(None, None, site_id, self.args.domain)
             self.end_session()
             return
@@ -230,7 +227,6 @@ class App():
             item = self.lock()
 
             if item is None:
-                logger.info('No items were fetched, sleeping...')
                 # Updating last activity to prevent the session to be
                 # killed by datatrace-dispatcher
                 self.update_activity()
@@ -489,12 +485,11 @@ class App():
             result = {'status': 'timeout', 'data': None, 'status_code': None, 'headers': None,
                       'size': None, 'error': 'Timeout'}
 
-        # FIXME: This will never be executed because in case of 'unknown_error' the
-        # exception is re-raised in web.get_page()
         if result['status'] == 'unknown_error':
             if not self.debug:
                 self.s.execute("insert into log.error(session_id, site_id, message) "
                                "values (%s, %s, %s)", self.session_id, site_id, result['error'])
+
             logger.error('Unhandled exception: %s', result['error'])
 
         self.operation_times.fetch_page = datetime.now() - date_start
@@ -593,6 +588,12 @@ class App():
                 self.save_site(domain, charset, 'Title encode error', server, powered_by,
                                result['size'], result['status_code'], system_tags, result['status'],
                                task_id)
+            except ValueError as e:
+                # An edge-case, the possible exception is:
+                # ValueError: A string literal cannot contain NUL (0x00) characters.
+                self.save_failed_attempt(domain, 'unknown_error', task_id)
+                self.s.execute("insert into log.error(session_id, site_id, message) "
+                               "values (%s, %s, %s)", self.session_id, site_id, str(e))
 
             return {'status': 'done', 'fetch_result': result['status'], 'error': None, 'stat': stat}
         else:
@@ -623,7 +624,7 @@ class App():
         we receive SIGTERM when the program is run under systemd daemon as a result
         of `systemctl stop datatrace@<instance>` command
         """
-        logger.info('Terminating session %s...', self.session_id)
+        logger.warning('Terminating session %s on signal %s...', self.session_id, signal_number)
         stack_trace = ''.join(traceback.format_stack(stack_frame))
         logger.info(stack_trace)
 

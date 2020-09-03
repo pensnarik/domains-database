@@ -171,7 +171,7 @@ $$ language plpgsql security definer;
 
 create or replace
 function public.on_system_tags_changed(
-  asite_id         integer,
+  asite_id         bigint,
   atask_id         integer,
   aold_system_tags integer[],
   anew_system_tags integer[]
@@ -189,7 +189,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
-comment on function public.on_system_tags_changed(asite_id integer, atask_id integer, aold_system_tags integer[], anew_system_tags integer[]) is 'Вызывается при изменении найденных тэгов';
+comment on function public.on_system_tags_changed(asite_id bigint, atask_id integer, aold_system_tags integer[], anew_system_tags integer[]) is 'Вызывается при изменении найденных тэгов';
 
 create table public.site (
     id                  bigserial not null,
