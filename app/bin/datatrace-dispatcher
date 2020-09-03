@@ -77,9 +77,10 @@ class App(object):
             try:
                 self.conn = psycopg2.connect(self.dsn)
                 break
-            except psycopg2.OperationalError:
+            except psycopg2.OperationalError as e:
                 logger.warning('Database at %s is not available yet, will try to reconnect in 5s',
                                self.dsn)
+                logger.warning(str(e))
                 time.sleep(5)
                 continue
         self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_AUTOCOMMIT)

@@ -2,8 +2,6 @@
 
 /* https://partner.r01.ru/zones/ru_domains.gz */
 
-create language plpythonu;
-
 create user datatrace with password 'datatrace';
 create user dispatcher with password 'dispatcher';
 
@@ -378,8 +376,6 @@ begin
   values (inet_client_addr(), ainfo, aversion, ahostname, ainstance, apid, pg_backend_pid())
   returning id into vid;
 
-  perform core.set_variable('session_id', vid::text);
-
   return vid;
 end;
 $$ language plpgsql security definer;
@@ -460,14 +456,6 @@ $$ language plpgsql security definer;
 comment on function public.add_domains(text[]) is 'Добавляет новые домены, возвращает количетсво новых доменов';
 
 create schema core;
-
-create or replace
-function core.set_variable(
-  aname  text,
-  avalue text
-) returns void as $$
-    GD[aname] = avalue
-$$ language plpythonu;
 
 create schema config;
 

@@ -1,42 +1,50 @@
 version: '3'
 
 networks:
-  datatrace:
+    datatrace:
 
 services:
-  datatrace-db:
-    image: datatrace-db
-    build: ./db
-    environment:
-      PG_LOG_MIN_MESSAGES: 'info'
-      PG_LOG_MIN_DURATION_STATEMENT: '0'
-    networks:
-      - datatrace
-    ports:
-      - '25000:5432'
-  datatrace-app:
-    image: datatrace-app
-    build: ./app
-    networks:
-      - datatrace
-    deploy:
-      mode: replicated
-      replicas: 4
-    environment:
-      DATATRACE_DB: 'postgresql://datatrace@datatrace-db/datatrace'
-  datatrace-dispatcher:
-    image: datatrace-app
-    build: ./app
-    networks:
-      - datatrace
-    environment:
-      DATATRACE_DB: 'postgresql://dispatcher@datatrace-db/datatrace'
-    entrypoint: /usr/local/bin/datatrace-dispatcher
-  datatrace-web:
-    image: datatrace-web
-    networks:
-      - datatrace
-    ports:
-      - '80:80'
-    depends_on:
-        - "datatrace-db"
+    datatrace-db:
+        image: pensnarik/postgres-pgmigrate:12.3
+        command:
+            - "postgres"
+            - "-c"
+            - "log_min_duration_statement=0"
+            - "-c"
+            - "shared_preload_libraries=pg_stat_statements"
+        environment:
+            POSTGRES_DB: datatrace
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres
+        volumes:
+            - ./db:/db
+        networks:
+            - datatrace
+        ports:
+            - '25000:5432'
+    datatrace-app:
+        image: datatrace-app
+        build: ./app
+        networks:
+            - datatrace
+        deploy:
+            mode: replicated
+            replicas: 4
+        environment:
+            DATATRACE_DB: 'postgresql://datatrace:datatrace@datatrace-db/datatrace'
+    datatrace-dispatcher:
+        image: datatrace-app
+        build: ./app
+        networks:
+            - datatrace
+        environment:
+            DATATRACE_DB: 'postgresql://dispatcher:dispatcher@datatrace-db/datatrace'
+        entrypoint: /usr/local/bin/datatrace-dispatcher
+    datatrace-web:
+        image: datatrace-web
+        networks:
+            - datatrace
+        ports:
+            - '80:80'
+        depends_on:
+            - "datatrace-db"
