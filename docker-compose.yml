@@ -31,14 +31,14 @@ services:
             mode: replicated
             replicas: 4
         environment:
-            DATATRACE_DB: 'postgresql://datatrace@datatrace-db/datatrace'
+            DATATRACE_DB: 'postgresql://datatrace:datatrace@datatrace-db/datatrace'
     datatrace-dispatcher:
         image: datatrace-app
         build: ./app
         networks:
             - datatrace
         environment:
-            DATATRACE_DB: 'postgresql://dispatcher@datatrace-db/datatrace'
+            DATATRACE_DB: 'postgresql://dispatcher:dispatcher@datatrace-db/datatrace'
         entrypoint: /usr/local/bin/datatrace-dispatcher
     datatrace-web:
         image: datatrace-web
