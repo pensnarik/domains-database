@@ -67,5 +67,6 @@ INSERT INTO config.tag (id, tag_type, name) VALUES (62, 'webstat', 'OpenStat');
 INSERT INTO config.tag (id, tag_type, name) VALUES (63, 'cms', 'Setup.ru');
 INSERT INTO config.tag (id, tag_type, name) VALUES (66, 'hack', 'MOZGIII');
 INSERT INTO config.tag (id, tag_type, name) VALUES (67, 'hack', 'pensnarik');
+INSERT INTO config.tag (id, tag_type, name) VALUES (68, 'cms', 'Magento');
 
-SELECT pg_catalog.setval('config.tag_id_seq', 67, false);
+SELECT pg_catalog.setval('config.tag_id_seq', 68, false);

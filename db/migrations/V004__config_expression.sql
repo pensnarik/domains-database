@@ -45,6 +45,7 @@ INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ign
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (41, 20, true, false, '<meta name="generator".{0,100}?InstantCMS.{0,100}?>', false);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (42, 37, true, false, '<script.{0,500}?>.{0,1000}?(sitehelp\.inkiev\.net).{0,1000}?<\/script>', false);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (44, 47, true, false, 'OpenCart is open source software and you are free to remove the powered by OpenCart if you want', false);
+INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (72, 47, true, false, '<link rel=[''"]stylesheet[''"].{1,300}?href=[''"]catalog\/view\/theme\/', false);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (45, 9, true, false, '<script.{1,500}?(app\.comagic\.ru\/static\/comagic\/comagic\.min\.js).{0,1000}?<\/script>', false);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (46, 16, true, true, '<script.{0,100}?>.{1,1000}?googletagmanager\.com.{1,1000}?<\/script>', false);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (47, 18, true, false, '<script src="http://hookmyvisit.com/js/escape-tracker.min.js" charset="UTF-8"></script>', false);
@@ -72,4 +73,7 @@ INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ign
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (70, 66, true, false, '\bmozgiii\b', true);
 INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (71, 67, true, false, '\bpensnarik\b', false);
 
-SELECT pg_catalog.setval('config.expression_id_seq', 71, false);
+INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (73, 68, true, true, '<a[\s\n\r]+href=[''\"]http:\/\/www\.magentocommerce\.com/bug-tracking[''\"][\s\n\r]+onclick=[''\"]this.target=[''\"]_blank[''\"][''\"]>', false);
+
+INSERT INTO config.expression (id, tag_id, is_active, is_multiline, code, is_ignorecase) VALUES (74, 68, true, false, '<script type\s{,10}=\s{,10}[''"]text/x-magento-init[''"]>', false);
+SELECT pg_catalog.setval('config.expression_id_seq', 74, false);
