@@ -1,0 +1,111 @@
+# AWS playbook
+---
+
+- hosts: localhost
+  connection: local
+  gather_facts: True
+
+  vars:
+    image: ami-0d705db840ec5f0c5
+    region: us-west-1
+    key_name: aws_ec2
+    id: "datatrace-app-6"
+    sec_group: "{{ id }}-sec"
+
+  tasks:
+    - name: Facts
+      block:
+
+      - name: Get instances facts
+        ec2_instance_info:
+          aws_access_key: "{{ provisioning_access_key }}"
+          aws_secret_key: "{{ provisioning_secret_key }}"
+          region: "{{ region }}"
+        register: result
+
+      - name: Instances ID
+        debug:
+          msg: "ID: {{ item.instance_id }} - State: {{ item.state.name }} - Public DNS: {{ item.public_dns_name }}"
+        loop: "{{ result.instances }}"
+
+      tags: always
+
+- hosts: datatrace
+  remote_user: ubuntu
+
+  vars:
+    datatrace_version: "0.6.21"
+    credentials_file: "/home/datatrace/.database"
+    distrib_path: "{{ playbook_dir }}/../app/dist"
+
+  tasks:
+    - name: Install and configure datatrace
+      block:
+
+      - name: Copy datatrace package
+        copy:
+          src: "{{ distrib_path }}/datatrace-{{ datatrace_version }}.tar.gz"
+          dest: "/home/ubuntu/datatrace-{{ datatrace_version }}.tar.gz"
+
+      - name: Upgrade apt cache
+        become: yes
+        apt:
+          upgrade: dist
+          update_cache: yes
+
+      - name: Install requirements
+        become: yes
+        apt:
+          pkg:
+            - python3-pip
+            - postgresql-server-dev-10
+            - postgresql-client-10
+          state: present
+
+      - name: Install datatrace package
+        become: yes
+        pip:
+          name: file:///home/ubuntu/datatrace-{{ datatrace_version }}.tar.gz
+          state: forcereinstall
+
+      - name: Write DB credentials
+        become: yes
+        template:
+          src: ../app/datatrace@.service
+          dest: /usr/local/lib/systemd/system/datatrace@.service
+
+      - name: Write dispatcher DB credentials
+        become: yes
+        template:
+          src: ../app/datatrace-dispatcher.service
+          dest: /usr/local/lib/systemd/system/datatrace-dispatcher.service
+
+      - name: Start datatrace
+        become: yes
+        become_user: root
+        become_method: sudo
+        systemd:
+          name: 'datatrace@{{ item }}.service'
+          enabled: yes
+          daemon_reload: yes
+          state: restarted
+        with_sequence: start=1 end=5 format=%02x
+
+      tags: ['configure']
+
+- hosts: datatrace
+  remote_user: ubuntu
+
+  tasks:
+    - name: Stop all datatrace instances
+      become: yes
+      become_user: root
+      become_method: sudo
+      systemd:
+        name: 'datatrace@{{ item }}.service'
+        enabled: yes
+        daemon_reload: yes
+        state: stopped
+      with_sequence: start=1 end=5 format=%02x
+
+  tags: ['stop']
