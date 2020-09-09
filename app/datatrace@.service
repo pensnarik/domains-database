@@ -11,6 +11,7 @@ Group=datatrace
 SyslogIdentifier=datatrace-%i
 ExecStart=/usr/local/bin/datatrace --instance %i
 Restart=on-failure
+Environment=DATATRACE_DB={{ datatrace_db }}
 
 [Install]
 WantedBy=datatrace.target

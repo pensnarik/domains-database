@@ -27,6 +27,7 @@ def get_page(url):
     data = None
     charset = None
     max_page_size = 10 * 1024 * 1024
+    charset_mapping = {'65001': 'utf-8'}
 
     try:
         s = requests.Session()
@@ -49,7 +50,7 @@ def get_page(url):
                 r.close()
                 raise SpyderError('too_large')
 
-        # r.encoding often wrong so we try to determine encoding as follows:
+        # r.encoding is often wrong so we try to determine encoding as follows:
         #
         # 1) Analyze HTTP headers
         # 2) Analyze <meta charset> HTML tag
@@ -58,6 +59,9 @@ def get_page(url):
         charset = parser.get_charset_from_headers(r.headers) or \
                   parser.get_charset(raw_data) or \
                   r.encoding
+
+        if charset in charset_mapping:
+            charset = charset_mapping[charset]
 
         logger.info('Detected charset as %s' % charset)
         # parser.get_charset can move the file pointer

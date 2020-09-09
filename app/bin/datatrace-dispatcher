@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s',)
 class App(object):
     """ Main application class"""
 
-    update_interval = 20
+    update_interval = 10
 
     def __init__(self):
         signal.signal(signal.SIGTERM, self.terminate)
@@ -27,46 +27,12 @@ class App(object):
             print('Please, set $DATATRACE_DB environment variable')
             sys.exit(1)
 
-    def update_sessions(self):
-        """ We will terminate sessions which have not been
-            updating its status more than 3 hours"""
-        terminated_sessions = list()
-        query = "update public.session " \
-                "set end_time = now(), term_signal = -1 " \
-                "where end_time is null and " \
-                "((now() - last_activity > interval '1 hour') or " \
-                "(last_activity is null and now() - start_time > interval '3 hours')) " \
-                "returning id"
-        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(query)
-        for row in cursor.fetchall():
-            terminated_sessions.append(row['id'])
-        if len(terminated_sessions) > 0:
-            logger.warning('Terminated sessions: %s' % ','.join(map(str, terminated_sessions)))
-
-        logger.info('Revoking jobs from dead sessions')
-        query = "delete from public.queue " \
-                "where session_id in " \
-                "(select id from public.session where end_time is not null) "
-        cursor.execute(query)
-
-    def get_active_sessions(self):
-        """ Returns array of all active sessions IDs"""
-        active_sessions = list()
-        query = "select id from public.active_sessions where queued < 1000 order by queued"
-        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cursor.execute(query)
-        for row in cursor.fetchall():
-            active_sessions.append(row['id'])
-        logger.info('Got %s sessions required new jobs' % len(active_sessions))
-        return active_sessions
-
-    def dispatch(self, session_id, size=100):
+    def dispatch(self, size=100):
         """Dispatches jobs to session with ID = session_id"""
-        logger.info('Dispatching %s jobs to session %s' % (size, session_id))
-        query = "select public.dispatch(%(session_id)s, %(count)s)"
+        logger.info('Dispatching %s jobs', size)
+        query = "select public.dispatch(%(count)s)"
         cursor = self.conn.cursor()
-        cursor.execute(query, {'session_id': session_id, 'count': size})
+        cursor.execute(query, {'count': size})
         result = cursor.fetchone()
         cursor.close()
         logger.info('%s jobs dispatched', result[0])
@@ -96,10 +62,7 @@ class App(object):
         self.setup()
         while True:
             try:
-                self.update_sessions()
-                active_sessions = self.get_active_sessions()
-                for session_id in active_sessions:
-                    self.dispatch(session_id, size=1000)
+                self.dispatch(100)
                 logger.info('Sleeping')
                 time.sleep(self.update_interval)
             except psycopg2.OperationalError as e:

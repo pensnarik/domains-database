@@ -19,7 +19,7 @@ select date_trunc('hour', finished_at) as dt,
 
 create view detailed_stat as
 with st_stat as (
-    select date_trunc('h', dt) dt,
+    select date_trunc('h', created) dt,
            count(*) as added
       from site_task
     where task_id = 5 group by 1

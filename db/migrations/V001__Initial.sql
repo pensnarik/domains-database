@@ -2,8 +2,16 @@
 
 /* https://partner.r01.ru/zones/ru_domains.gz */
 
-create user datatrace with password 'datatrace';
-create user dispatcher with password 'dispatcher';
+do $$
+begin
+    execute $sql$
+      create user datatrace with password 'datatrace';
+      create user dispatcher with password 'dispatcher';
+    $sql$;
+exception when duplicate_object then
+    raise warning 'User crawler already exists';
+end;
+$$ language plpgsql;
 
 create type public.tag_type_mnemonic as enum (
     'cms',
@@ -325,9 +333,11 @@ create table public.site_task
   id          serial,
   task_id     integer not null references task(id),
   site_id     integer not null,
+  session_id  integer,
   domain      varchar(255),
   job         varchar(126),
-  dt          timestamptz default now()
+  created     timestamptz default now(),
+  dispatched  timestamptz
 );
 
 alter table only site_task
@@ -349,6 +359,7 @@ create table public.session
     end_time    timestamptz,
     term_signal integer,
     sites_processed integer default 0,
+    jobs_dispatched integer default 0,
     last_activity timestamptz
 );
 
@@ -357,103 +368,10 @@ alter table only session
 
 create index session_last_activity_idx on session using btree (last_activity);
 
-comment on column session.backend_pid is 'Идентификатор серверного процесса, обслуживающего сессию, полученный с помощью pg_backend_pid()';
+comment on column session.backend_pid is
+  'Process ID obtained by pg_backend_pid()';
 
 grant select, update on public.session to dispatcher;
-
-create or replace
-function init_session(
-  ainfo     text,
-  aversion  varchar,
-  ahostname text default null::text,
-  ainstance text default null::text,
-  apid      integer default 0
-) returns integer as $$
-declare
-  vid integer;
-begin
-  insert into session (ip, info, version, hostname, instance, pid, backend_pid)
-  values (inet_client_addr(), ainfo, aversion, ahostname, ainstance, apid, pg_backend_pid())
-  returning id into vid;
-
-  return vid;
-end;
-$$ language plpgsql security definer;
-
-comment on function public.init_session(text, varchar, text, text, integer) is 'Инициализация сессии в базе данных';
-
-create or replace
-function end_session
-(
-    aid integer,
-    asignal integer default null::integer
-) returns void as $$
-begin
-  update session
-     set end_time = current_timestamp,
-         term_signal = asignal
-   where id = aid;
-end;
-$$ language plpgsql security definer;
-
-create or replace
-function public.add_domain(
-  adomain                text,
-  askip_reference_update boolean default true
-) returns integer as $$
-declare
-  vcount integer := 0;
-  vpartition text := left(md5((adomain)::text), 2);
-  vexists integer;
-begin
-  if not askip_reference_update then
-    execute format($sql$
-    update partitions.site__%1$s
-       set reference_count = coalesce(reference_count, 0) + 1
-     where domain = adomain;
-    $sql$, vpartition);
-  end if;
-
-  if not exists (
-    select *
-      from public.site
-     where domain = adomain
-       and left(md5(domain), 2) = vpartition
-  ) then
-    execute format($sql$
-    insert into partitions.site__%1$s (domain)
-    values ($1);
-    $sql$, vpartition) using adomain;
-
-    return 1;
-  else
-    return 0;
-  end if;
-
-exception when unique_violation then
-  return 0;
-end;
-$$ language plpgsql security definer;
-
-comment on function public.add_domain(text, boolean) is 'Добавляет новый домен, возвращает количетсво новых доменов (1 или 0)';
-
-create or replace
-function public.add_domains
-(
-  adomains           text[]
-) returns integer as $$
-declare
-  vcount integer := 0;
-begin
-  select sum(public.add_domain(domain))
-    into vcount
-    from unnest(adomains) domain;
-
-  return vcount;
-end;
-$$ language plpgsql security definer;
-
-comment on function public.add_domains(text[]) is 'Добавляет новые домены, возвращает количетсво новых доменов';
 
 create schema core;
 
@@ -523,33 +441,6 @@ create index tag_meta_value_task_id_idx on public.tag_meta_value using btree (ta
 
 create index tag_meta_value_site_id_idx on public.tag_meta_value using btree (site_id);
 
-create or replace
-function public.save_tag_meta_value
-(
-    asite_id     integer,
-    atask_id     integer,
-    atag_meta_id integer,
-    avalue       text
-) returns integer as $$
-begin
-    update public.tag_meta_value
-       set value = avalue
-     where task_id = atask_id
-       and site_id = asite_id
-       and tag_meta_id = atag_meta_id;
-
-    if not found then
-        insert into public.tag_meta_value(site_id, task_id, tag_meta_id, value)
-        values (asite_id, atask_id, atag_meta_id, avalue);
-
-        return 1;
-    else
-        return 0;
-    end if;
-end;
-$$ language plpgsql
-   security definer;
-
 create table config.expression (
     id serial,
     tag_id integer not null,
@@ -583,34 +474,6 @@ create index queue_session_idx on public.queue(session_id);
 
 grant select, delete on public.queue to dispatcher;
 
-create or replace
-function public.get_next_item
-(
-    asession_id integer,
-    atask_id    integer default null
-) returns table (
-    id           integer,
-    site_id      integer,
-    task_id      integer,
-    domain       varchar,
-    job          varchar
-) as $$
-begin
-    return query
-    select q.id,
-           q.site_id,
-           q.task_id,
-           q.domain,
-           q.job
-      from public.queue q
-     where q.session_id = asession_id
-       and (q.task_id = atask_id or atask_id is null)
-     limit 1;
-end;
-$$ language plpgsql
-   security definer
-   set enable_seqscan to 'off';
-
 create or replace view public.active_sessions as
 select s.id, count(*) as queued
   from session s
@@ -619,37 +482,6 @@ where s.end_time is null
 group by 1;
 
 grant select on public.active_sessions to dispatcher;
-
-create or replace
-function public.dispatch
-(
-    asession_id integer,
-    acount      integer
-) returns integer as $$
-declare
-    vresult integer := 0;
-begin
-    with records as (
-      select st.*
-        from public.site_task st
-        order by st.id
-        limit acount
-    ), deleted as (
-      delete from public.site_task where id in (select id from records) returning id
-    ), result as (
-    insert into public.queue (session_id, site_id, task_id, domain, job)
-    select asession_id, st.site_id, st.task_id, st.domain, st.job
-      from records st
-    returning 1 as r )
-    select sum(r) into vresult from result;
-
-    return vresult;
-end;
-$$ language plpgsql
-   security definer;
-
-comment on function public.dispatch(integer, integer)
-  is 'Dispatches acount of tasks from site_task to the given session. Called by datatrace-dispatcher';
 
 create table public.stat
 (
