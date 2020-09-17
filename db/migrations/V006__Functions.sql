@@ -62,8 +62,8 @@ begin
       returning id
     ),
     result as (
-      insert into public.queue (session_id, site_id, task_id, domain, job)
-    select asession_id, st.site_id, st.task_id, st.domain, st.job
+      insert into public.queue (id, session_id, site_id, task_id, domain, job)
+    select st.id, asession_id, st.site_id, st.task_id, st.domain, st.job
       from records st
       returning 1 as r
     )
@@ -92,13 +92,13 @@ begin
       delete
         from public.queue q
        where q.session_id = asession_id
-      returning task_id
+      returning id
     )
     update public.site_task t
        set dispatched = null,
            session_id = null
       from deleted d
-     where t.id = d.task_id;
+     where t.id = d.id;
 
      get diagnostics vresult := row_count;
 
