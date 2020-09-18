@@ -34,7 +34,7 @@
   remote_user: ubuntu
 
   vars:
-    datatrace_version: "0.6.21"
+    datatrace_version: "0.6.22"
     credentials_file: "/home/datatrace/.database"
     distrib_path: "{{ playbook_dir }}/../app/dist"
 
